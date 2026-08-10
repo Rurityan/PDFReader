@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PDFReader.ViewModels"
+        x:Class="PDFReader.SettingsWindow"
+        x:DataType="vm:SettingsWindowViewModel"
+        Title="设置"
+        Width="600"
+        Height="720"
+        MinWidth="520"
+        MinHeight="620"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="*,Auto" Background="#F5F6F8">
+        <ScrollViewer Grid.Row="0" Padding="24" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="18">
+                <TextBlock Text="资源路径" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
+                <TextBlock Text="数据库与配置文件（固定位置）" FontSize="12" Foreground="#737E88" />
+                <TextBlock Text="程序目录/user_data/reader.db 和 settings.json" TextWrapping="Wrap" Foreground="#4A5560" />
+                <TextBlock Text="语音文件目录" FontSize="12" Foreground="#737E88" />
+                <TextBox Text="{Binding AudioDirectory}" />
+                <TextBlock Text="OCR 截图文件目录" FontSize="12" Foreground="#737E88" />
+                <CheckBox Content="开启选区截图缓存" IsChecked="{Binding EnableOcrCaptureCache}" />
+                <TextBox Text="{Binding OcrCaptureDirectory}" PlaceholderText="截图输出目录" />
+
+                <Border Height="1" Background="#D9DDE2" Margin="0,4" />
+                <TextBlock Text="OpenAI Compatible TTS" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
+                <TextBlock Text="Base URL" FontSize="12" Foreground="#737E88" />
+                <TextBox Text="{Binding TtsBaseUrl}" PlaceholderText="例如 https://host.example/v1" />
+                <TextBlock Text="API Key" FontSize="12" Foreground="#737E88" />
+                <TextBox Text="{Binding TtsApiKey}" PasswordChar="*" />
+                <TextBlock Text="Model Type" FontSize="12" Foreground="#737E88" />
+                <TextBox Text="{Binding TtsModelType}" />
+                <TextBlock Text="Voice Model" FontSize="12" Foreground="#737E88" />
+                <TextBox Text="{Binding TtsVoiceModel}" />
+            </StackPanel>
+        </ScrollViewer>
+
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,1,0,0" Padding="24,14">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="取消" Click="CancelClick" Padding="16,8" />
+                <Button Content="保存" Click="SaveClick" Background="#2B6CB0" Foreground="White" Padding="18,8" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

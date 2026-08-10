@@ -14,3 +14,4 @@ appsettings.Local.json
 /template.pdf
 /ocr-test.png
 /ocr-result.json
+/user_data/

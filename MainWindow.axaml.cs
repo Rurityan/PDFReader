@@ -128,6 +128,12 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void OpenSettingsClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var window = new SettingsWindow(ViewModel.GetSettings(), ViewModel.ApplySettingsAsync);
+        await window.ShowDialog(this);
+    }
+
     private async void BookmarkDoubleTapped(object? sender, TappedEventArgs e)
     {
         if (sender is ListBox listBox && listBox.SelectedItem is Bookmark bookmark)

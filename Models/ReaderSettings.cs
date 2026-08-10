@@ -7,6 +7,7 @@ public sealed class ReaderSettings
 {
     public bool EnableOcrCaptureCache { get; set; }
     public string OcrCaptureDirectory { get; set; } = GetDefaultCaptureDirectory();
+    public string AudioDirectory { get; set; } = GetDefaultAudioDirectory();
     public string TtsBaseUrl { get; set; } = string.Empty;
     public string TtsApiKey { get; set; } = string.Empty;
     public string TtsModelType { get; set; } = string.Empty;
@@ -14,9 +15,26 @@ public sealed class ReaderSettings
 
     public static string GetDefaultCaptureDirectory()
     {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PDFReader",
-            "ocr-captures");
+        return Path.Combine(GetUserDataDirectory(), "resource", "image");
+    }
+
+    public static string GetDefaultDatabasePath()
+    {
+        return Path.Combine(GetUserDataDirectory(), "reader.db");
+    }
+
+    public static string GetDefaultSettingsPath()
+    {
+        return Path.Combine(GetUserDataDirectory(), "settings.json");
+    }
+
+    public static string GetUserDataDirectory()
+    {
+        return Path.Combine(AppContext.BaseDirectory, "user_data");
+    }
+
+    public static string GetDefaultAudioDirectory()
+    {
+        return Path.Combine(GetUserDataDirectory(), "resource", "voice");
     }
 }

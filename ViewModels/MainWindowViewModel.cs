@@ -15,11 +15,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly PdfDocumentService _pdfService = new();
     private readonly PaddleOcrService _ocrService = new();
-    private readonly OcrResultRepository _ocrRepository = new();
-    private readonly BookmarkRepository _bookmarkRepository = new();
     private readonly SettingsService _settingsService = new();
     private readonly TtsService _ttsService = new();
     private readonly AudioPlaybackService _audioPlaybackService = new();
+    private OcrResultRepository _ocrRepository;
+    private BookmarkRepository _bookmarkRepository;
+    private ReaderSettings _settings;
     private CancellationTokenSource? _ocrCancellation;
     private Bitmap? _pageImage;
     private int _currentPage;
@@ -78,6 +79,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string _ocrCaptureDirectory = ReaderSettings.GetDefaultCaptureDirectory();
 
     [ObservableProperty]
+    private string _audioDirectory = ReaderSettings.GetDefaultAudioDirectory();
+
+    [ObservableProperty]
     private string _ttsBaseUrl = string.Empty;
 
     [ObservableProperty]
@@ -104,8 +108,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public MainWindowViewModel()
     {
         var settings = _settingsService.Load();
+        _settings = settings;
+        _ocrRepository = new OcrResultRepository();
+        _bookmarkRepository = new BookmarkRepository();
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
+        AudioDirectory = settings.AudioDirectory;
         TtsBaseUrl = settings.TtsBaseUrl;
         TtsApiKey = settings.TtsApiKey;
         TtsModelType = settings.TtsModelType;
@@ -395,22 +403,38 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void SaveSettings()
+    private async Task SaveSettings()
     {
         if (string.IsNullOrWhiteSpace(OcrCaptureDirectory))
         {
             OcrCaptureDirectory = ReaderSettings.GetDefaultCaptureDirectory();
         }
 
-        _settingsService.Save(new ReaderSettings
+        await ApplySettingsAsync(CreateReaderSettings());
+    }
+
+    public ReaderSettings GetSettings() => CreateReaderSettings();
+
+    public async Task ApplySettingsAsync(ReaderSettings settings)
+    {
+        _settings = settings;
+        _settingsService.Save(_settings);
+
+        EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
+        OcrCaptureDirectory = settings.OcrCaptureDirectory;
+        AudioDirectory = settings.AudioDirectory;
+        TtsBaseUrl = settings.TtsBaseUrl;
+        TtsApiKey = settings.TtsApiKey;
+        TtsModelType = settings.TtsModelType;
+        TtsVoiceModel = settings.TtsVoiceModel;
+
+        _ocrRepository = new OcrResultRepository();
+        _bookmarkRepository = new BookmarkRepository();
+        if (HasDocument)
         {
-            EnableOcrCaptureCache = EnableOcrCaptureCache,
-            OcrCaptureDirectory = OcrCaptureDirectory.Trim(),
-            TtsBaseUrl = TtsBaseUrl.Trim(),
-            TtsApiKey = TtsApiKey.Trim(),
-            TtsModelType = TtsModelType.Trim(),
-            TtsVoiceModel = TtsVoiceModel.Trim(),
-        });
+            await LoadDocumentDataAsync();
+        }
+
         StatusMessage = "设置已保存";
     }
 
@@ -474,6 +498,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             OcrCaptureDirectory = OcrCaptureDirectory,
+            AudioDirectory = AudioDirectory,
             TtsBaseUrl = TtsBaseUrl,
             TtsApiKey = TtsApiKey,
             TtsModelType = TtsModelType,

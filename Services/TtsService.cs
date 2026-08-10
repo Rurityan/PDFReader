@@ -62,10 +62,9 @@ public sealed class TtsService
             throw new InvalidOperationException($"TTS 请求失败 ({(int)response.StatusCode}): {error}");
         }
 
-        var directory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PDFReader",
-            "audio");
+        var directory = string.IsNullOrWhiteSpace(settings.AudioDirectory)
+            ? ReaderSettings.GetDefaultAudioDirectory()
+            : settings.AudioDirectory.Trim();
         Directory.CreateDirectory(directory);
         var fileName = $"page-{pageNumber}-{DateTime.Now:yyyyMMdd-HHmmss-fff}-{Guid.NewGuid():N}.mp3";
         var path = Path.Combine(directory, fileName);

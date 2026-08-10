@@ -16,13 +16,12 @@ public sealed class BookmarkRepository
 
     public BookmarkRepository()
     {
-        var appDirectory = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PDFReader");
+        var databasePath = Path.GetFullPath(ReaderSettings.GetDefaultDatabasePath());
+        var appDirectory = Path.GetDirectoryName(databasePath)!;
         Directory.CreateDirectory(appDirectory);
 
         _options = new DbContextOptionsBuilder<ReaderDbContext>()
-            .UseSqlite($"Data Source={Path.Combine(appDirectory, "reader.db")}")
+            .UseSqlite($"Data Source={databasePath}")
             .Options;
 
         using var database = new ReaderDbContext(_options);

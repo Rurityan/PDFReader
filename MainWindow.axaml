@@ -12,15 +12,38 @@
         MinWidth="900"
         MinHeight="600"
         Title="PDF Reader">
+    <Window.Styles>
+        <Style Selector="Button.settings-button">
+            <Setter Property="Background" Value="#EEF1F4" />
+            <Setter Property="Foreground" Value="#303943" />
+        </Style>
+        <Style Selector="Button.settings-button:pointerover">
+            <Setter Property="Background" Value="#E6A23C" />
+            <Setter Property="Foreground" Value="#20252B" />
+        </Style>
+        <Style Selector="Button.settings-button:pressed">
+            <Setter Property="Background" Value="#D18B22" />
+            <Setter Property="Foreground" Value="#20252B" />
+        </Style>
+        <Style Selector="Button.settings-button:focus">
+            <Setter Property="Background" Value="#E6A23C" />
+            <Setter Property="Foreground" Value="#20252B" />
+        </Style>
+    </Window.Styles>
     <Grid RowDefinitions="Auto,Auto,*" Background="#F5F6F8">
         <Border Grid.Row="0" Background="#20252B" Padding="20,14">
-            <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <TextBlock Text="PDF READER" Foreground="#FFFFFF" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <Border Width="1" Height="22" Background="#50565E" />
                     <TextBlock Text="{Binding DocumentTitle}" Foreground="#C7CDD4" FontSize="14" VerticalAlignment="Center" />
                 </StackPanel>
-                <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Foreground="#AAB2BB" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Foreground="#AAB2BB" VerticalAlignment="Center" Margin="0,0,18,0" />
+                <Button Grid.Column="3"
+                        Content="设置"
+                        Click="OpenSettingsClick"
+                        Padding="12,6"
+                        Classes="settings-button" />
             </Grid>
         </Border>
 
@@ -114,14 +137,6 @@
                     </Border>
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="OCR 截图缓存" FontWeight="SemiBold" Foreground="#414B55" />
-                            <CheckBox Content="开启选区截图缓存" IsChecked="{Binding EnableOcrCaptureCache}" />
-                            <TextBox Text="{Binding OcrCaptureDirectory}" PlaceholderText="截图输出目录" />
-                            <Button Content="保存设置" Command="{Binding SaveSettingsCommand}" HorizontalAlignment="Left" Padding="12,7" />
-                        </StackPanel>
-                    </Border>
-                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
-                        <StackPanel Spacing="8">
                             <TextBlock Text="OCR 历史记录" FontWeight="SemiBold" Foreground="#414B55" />
                             <ListBox ItemsSource="{Binding OcrHistory}" Height="180">
                                 <ListBox.ItemTemplate>
@@ -138,10 +153,6 @@
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <TextBlock Text="页面音频" FontWeight="SemiBold" Foreground="#414B55" />
-                            <TextBox Text="{Binding TtsBaseUrl}" PlaceholderText="TTS Base URL" />
-                            <TextBox Text="{Binding TtsApiKey}" PlaceholderText="API Key" />
-                            <TextBox Text="{Binding TtsModelType}" PlaceholderText="Model Type" />
-                            <TextBox Text="{Binding TtsVoiceModel}" PlaceholderText="Voice Model" />
                             <Button Content="生成当前 OCR 语音" Command="{Binding GenerateSpeechCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
                             <Button Content="播放生成的音频" Command="{Binding PlayGeneratedAudioCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
                             <Button Content="停止播放" Command="{Binding StopAudioCommand}" HorizontalAlignment="Left" Padding="12,7" />
