@@ -67,11 +67,21 @@
         <Grid Grid.Row="2" ColumnDefinitions="270,*,300">
             <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="18,20">
                 <StackPanel Spacing="18">
-                    <TextBlock Text="文档信息" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="文件路径" FontSize="12" Foreground="#89929C" />
-                        <TextBlock Text="{Binding DocumentPath}" TextWrapping="Wrap" Foreground="#37414A" />
-                    </StackPanel>
+                    <TextBlock Text="PDF 文档" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <ListBox ItemsSource="{Binding Documents}"
+                             SelectedItem="{Binding SelectedDocument, Mode=TwoWay}"
+                             Height="170"
+                             SelectionChanged="DocumentSelectionChanged">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:PdfDocument">
+                                <StackPanel Spacing="2" Margin="0,3">
+                                    <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
+                                    <TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
+                                    <TextBlock Text="{Binding PathStatus}" TextWrapping="Wrap" Foreground="#C53030" FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                     <Border Height="1" Background="#E5E8EB" />
                     <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
                     <StackPanel Spacing="6">
@@ -79,14 +89,27 @@
                         <Button Content="创建当前页书签" Command="{Binding AddBookmarkCommand}" HorizontalAlignment="Left" Padding="10,6" />
                         <TextBox Text="{Binding SelectedBookmarkTitle}" IsEnabled="{Binding HasSelectedBookmark}" PlaceholderText="选中书签名称" />
                         <Button Content="保存选中书签" Command="{Binding SaveBookmarkCommand}" IsEnabled="{Binding HasSelectedBookmark}" HorizontalAlignment="Left" Padding="10,6" />
+                        <Button Content="撤回删除" Command="{Binding UndoBookmarkDeleteCommand}" IsEnabled="{Binding CanUndoBookmarkDelete}" HorizontalAlignment="Left" Padding="10,6" />
                     </StackPanel>
-                    <TreeView ItemsSource="{Binding Bookmarks}"
+                    <TreeView x:Name="BookmarkTree"
+                              ItemsSource="{Binding Bookmarks}"
                               SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
                               Height="230"
+                              PointerPressed="BookmarkTreePointerPressed"
+                              PointerMoved="BookmarkTreePointerMoved"
+                              PointerReleased="BookmarkTreePointerReleased"
                               DoubleTapped="BookmarkDoubleTapped">
                         <TreeView.ItemTemplate>
                             <TreeDataTemplate x:DataType="model:Bookmark" ItemsSource="{Binding Children}">
-                                <Grid ColumnDefinitions="Auto,*" Margin="0,3">
+                                <Grid ColumnDefinitions="Auto,*" Margin="0,3" Background="Transparent">
+                                    <Grid.ContextMenu>
+                                        <ContextMenu DataContext="{Binding}">
+                                            <MenuItem Header="跳转到所在页面" Tag="{Binding}" Click="JumpToBookmarkClick" />
+                                            <MenuItem Header="修改书签名称" Tag="{Binding}" Click="RenameBookmarkClick" />
+                                            <MenuItem Header="脱离父书签" Tag="{Binding}" Click="DetachBookmarkClick" />
+                                            <MenuItem Header="删除书签" Tag="{Binding}" Click="DeleteBookmarkClick" />
+                                        </ContextMenu>
+                                    </Grid.ContextMenu>
                                     <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" Margin="0,0,8,0" />
                                     <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
                                 </Grid>

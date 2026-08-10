@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.BookmarkNameWindow"
+        Title="修改书签名称"
+        Width="420"
+        Height="190"
+        MinWidth="360"
+        MinHeight="170"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,*,Auto" Background="#F5F6F8" Margin="20">
+        <TextBlock Text="书签名称" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
+        <TextBox x:Name="NameInput"
+                 Grid.Row="1"
+                 Margin="0,14"
+                 VerticalContentAlignment="Center"
+                 PlaceholderText="请输入书签名称" />
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="取消" Click="CancelClick" Padding="14,7" />
+            <Button Content="确定" Click="ConfirmClick" Padding="14,7" Background="#2B6CB0" Foreground="White" />
+        </StackPanel>
+    </Grid>
+</Window>

@@ -37,6 +37,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string _documentPath = "从文件菜单打开一个 PDF 文档";
 
     [ObservableProperty]
+    private PdfDocument? _selectedDocument;
+
+    [ObservableProperty]
     private string _statusMessage = "就绪";
 
     [ObservableProperty]
@@ -116,8 +119,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private OcrRecord? _selectedOcrRecord;
 
+    private readonly Stack<DeletedBookmarkOperation> _deletedBookmarkHistory = new();
+
     public ObservableCollection<OcrRecord> OcrHistory { get; } = new();
     public ObservableCollection<Bookmark> Bookmarks { get; } = new();
+    public ObservableCollection<PdfDocument> Documents { get; } = new();
 
     public MainWindowViewModel()
     {
@@ -134,6 +140,30 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TtsModelType = settings.TtsModelType;
         TtsVoiceModel = settings.TtsVoiceModel;
     }
+
+    public async Task InitializeAsync()
+    {
+        try
+        {
+            Documents.Clear();
+            var documents = await _documentRepository.GetAllAsync();
+            foreach (var document in documents)
+            {
+                document.RefreshPathStatus();
+                Documents.Add(document);
+            }
+
+            StatusMessage = documents.Count == 0
+                ? "暂无已保存的 PDF 文档"
+                : $"已加载 {documents.Count} 个 PDF 文档";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"加载 PDF 文档列表失败: {exception.Message}";
+        }
+    }
+
+    public void SetStatus(string message) => StatusMessage = message;
 
     public Bitmap? PageImage
     {
@@ -153,6 +183,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         && !IsBusy
         && !IsOcrBusy;
     public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is not null && !IsTtsBusy;
+    public bool CanUndoBookmarkDelete => _deletedBookmarkHistory.Count > 0 && !IsBusy;
 
     [RelayCommand]
     private async Task GoPreviousAsync()
@@ -253,13 +284,104 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         try
         {
-            IsBusy = true;
-            StatusMessage = "正在打开文档...";
-            await _pdfService.OpenAsync(filePath);
-
             var document = await _documentRepository.GetOrCreateAsync(
                 filePath,
                 Path.GetFileName(filePath));
+            document = AddOrUpdateDocument(document);
+            await OpenDocumentCoreAsync(document);
+        }
+        catch (Exception exception)
+        {
+            HasDocument = false;
+            StatusMessage = $"打开失败: {exception.Message}";
+        }
+    }
+
+    public async Task OpenStoredDocumentAsync(PdfDocument document)
+    {
+        document.RefreshPathStatus();
+        if (document.IsMissing)
+        {
+            StatusMessage = "PDF 文件不存在，请选择重新绑定、暂时搁置或删除";
+            return;
+        }
+
+        await OpenDocumentCoreAsync(document);
+    }
+
+    public async Task RebindDocumentAsync(PdfDocument document, string newFilePath)
+    {
+        if (!File.Exists(newFilePath))
+        {
+            StatusMessage = "重新绑定失败：选择的文件不存在";
+            return;
+        }
+
+        try
+        {
+            await _documentRepository.RebindAsync(document.Id, newFilePath);
+            document.FilePath = Path.GetFullPath(newFilePath);
+            document.Title = Path.GetFileName(document.FilePath);
+            document.RefreshPathStatus();
+            await OpenDocumentCoreAsync(document);
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"重新绑定失败: {exception.Message}";
+        }
+    }
+
+    public async Task DeleteDocumentAsync(PdfDocument document)
+    {
+        if (IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            var isCurrentDocument = document.Id == _documentId;
+            if (isCurrentDocument)
+            {
+                _audioPlaybackService.Stop();
+                _pdfService.Close();
+                PageImage?.Dispose();
+                PageImage = null;
+                HasDocument = false;
+                _documentId = Guid.Empty;
+                DocumentTitle = "未打开文档";
+                DocumentPath = "从文件菜单打开一个 PDF 文档";
+                PageIndicator = "0 / 0";
+                OcrHistory.Clear();
+                Bookmarks.Clear();
+                _deletedBookmarkHistory.Clear();
+                OnPropertyChanged(nameof(CanUndoBookmarkDelete));
+            }
+
+            DeleteResources(await _documentRepository.DeleteAsync(document.Id));
+            Documents.Remove(document);
+            if (ReferenceEquals(SelectedDocument, document))
+            {
+                SelectedDocument = null;
+            }
+
+            StatusMessage = "PDF 对象及其关联资源已删除";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"删除 PDF 对象失败: {exception.Message}";
+        }
+    }
+
+    private async Task OpenDocumentCoreAsync(PdfDocument document)
+    {
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在打开文档...";
+            await _pdfService.OpenAsync(document.FilePath);
+            await _documentRepository.MarkOpenedAsync(document.Id);
+
             _documentId = document.Id;
             DocumentTitle = document.Title;
             DocumentPath = document.FilePath;
@@ -282,10 +404,28 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    private PdfDocument AddOrUpdateDocument(PdfDocument document)
+    {
+        var existing = Documents.SingleOrDefault(item => item.Id == document.Id);
+        if (existing is null)
+        {
+            document.RefreshPathStatus();
+            Documents.Insert(0, document);
+            return document;
+        }
+
+        existing.FilePath = document.FilePath;
+        existing.Title = document.Title;
+        existing.RefreshPathStatus();
+        return existing;
+    }
+
     private async Task LoadDocumentDataAsync()
     {
         OcrHistory.Clear();
         Bookmarks.Clear();
+        _deletedBookmarkHistory.Clear();
+        OnPropertyChanged(nameof(CanUndoBookmarkDelete));
         SelectedBookmark = null;
         SelectedOcrRecord = null;
 
@@ -413,6 +553,291 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         await ShowPageAsync(bookmark.PageNumber - 1);
+    }
+
+    public async Task RenameBookmarkAsync(Bookmark? bookmark, string? title)
+    {
+        if (bookmark is null || !HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        title = title?.Trim();
+        if (string.IsNullOrWhiteSpace(title))
+        {
+            StatusMessage = "书签名称不能为空";
+            return;
+        }
+
+        try
+        {
+            bookmark.Title = title;
+            bookmark.UpdatedAtUtc = DateTime.UtcNow;
+            if (bookmark.IsPersisted)
+            {
+                await _bookmarkRepository.SaveAsync(bookmark);
+            }
+
+            if (ReferenceEquals(SelectedBookmark, bookmark))
+            {
+                SelectedBookmarkTitle = bookmark.Title;
+            }
+
+            StatusMessage = "书签名称已更新";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"修改书签名称失败: {exception.Message}";
+        }
+    }
+
+    public async Task MoveBookmarkAsync(Bookmark? dragged, Bookmark? target, bool asChild)
+    {
+        if (dragged is null || target is null || ReferenceEquals(dragged, target)
+            || !HasDocument || IsBusy || IsBookmarkInSubtree(dragged, target))
+        {
+            return;
+        }
+
+        try
+        {
+            // A persisted item cannot point at a new, unsaved parent. Save the target
+            // first so the database can accept the new relationship.
+            if (!target.IsPersisted)
+            {
+                await SaveBookmarkAndAncestorsAsync(target);
+            }
+
+            var oldParent = dragged.Parent;
+            var oldSiblings = oldParent?.Children ?? Bookmarks;
+            var newParent = asChild ? target : target.Parent;
+            var newSiblings = newParent?.Children ?? Bookmarks;
+
+            oldSiblings.Remove(dragged);
+            if (asChild)
+            {
+                target.Children.Add(dragged);
+            }
+            else
+            {
+                var targetIndex = newSiblings.IndexOf(target);
+                newSiblings.Insert(Math.Max(0, targetIndex + 1), dragged);
+            }
+
+            dragged.Parent = newParent;
+            dragged.ParentId = newParent?.Id;
+            await RenumberAndPersistAsync(oldSiblings);
+            if (!ReferenceEquals(oldSiblings, newSiblings))
+            {
+                await RenumberAndPersistAsync(newSiblings);
+            }
+
+            SelectedBookmark = dragged;
+            StatusMessage = asChild ? "书签已设为子书签" : "书签已调整为同级书签";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"调整书签层级失败: {exception.Message}";
+        }
+    }
+
+    public async Task DetachBookmarkAsync(Bookmark? bookmark)
+    {
+        if (bookmark is null || bookmark.Parent is null || !HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            var oldParent = bookmark.Parent;
+            oldParent.Children.Remove(bookmark);
+            bookmark.Parent = null;
+            bookmark.ParentId = null;
+            Bookmarks.Add(bookmark);
+            await RenumberAndPersistAsync(oldParent.Children);
+            await RenumberAndPersistAsync(Bookmarks);
+            SelectedBookmark = bookmark;
+            StatusMessage = "书签已脱离父书签";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"脱离父书签失败: {exception.Message}";
+        }
+    }
+
+    public async Task DeleteBookmarkAsync(Bookmark? bookmark)
+    {
+        if (bookmark is null || !HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            var parent = bookmark.Parent;
+            var siblings = parent?.Children ?? Bookmarks;
+            var deletedTree = EnumerateBookmarkTree(bookmark).ToList();
+            var deletedIds = deletedTree.Select(item => item.Id).ToHashSet();
+            var ocrAttachments = OcrHistory
+                .Where(record => record.BookmarkId is Guid bookmarkId && deletedIds.Contains(bookmarkId))
+                .Select(record => new OcrAttachment(record.Id, record.BookmarkId!.Value))
+                .ToList();
+            var originalIndex = siblings.IndexOf(bookmark);
+            var selectedIsInSubtree = SelectedBookmark is not null
+                && (ReferenceEquals(SelectedBookmark, bookmark)
+                    || IsBookmarkInSubtree(bookmark, SelectedBookmark));
+
+            if (bookmark.IsPersisted)
+            {
+                await _bookmarkRepository.DeleteSubtreeAsync(bookmark.Id);
+                foreach (var record in OcrHistory.Where(record => record.BookmarkId is Guid bookmarkId
+                    && deletedIds.Contains(bookmarkId)))
+                {
+                    record.BookmarkId = null;
+                }
+            }
+
+            siblings.Remove(bookmark);
+            bookmark.Parent = null;
+            bookmark.ParentId = null;
+            await RenumberAndPersistAsync(siblings);
+            _deletedBookmarkHistory.Push(new DeletedBookmarkOperation(
+                bookmark,
+                parent,
+                originalIndex,
+                bookmark.IsPersisted,
+                ocrAttachments));
+            OnPropertyChanged(nameof(CanUndoBookmarkDelete));
+
+            if (selectedIsInSubtree)
+            {
+                SelectedBookmark = parent;
+            }
+
+            StatusMessage = "书签及其子书签已删除";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"删除书签失败: {exception.Message}";
+        }
+    }
+
+    [RelayCommand]
+    private async Task UndoBookmarkDeleteAsync()
+    {
+        if (!CanUndoBookmarkDelete)
+        {
+            return;
+        }
+
+        var operation = _deletedBookmarkHistory.Peek();
+        var siblings = operation.Parent?.Children ?? Bookmarks;
+        if (operation.Parent is not null && !IsBookmarkInCurrentTree(operation.Parent))
+        {
+            StatusMessage = "无法撤回：原父书签当前不在书签树中";
+            return;
+        }
+
+        try
+        {
+            var index = Math.Clamp(operation.OriginalIndex, 0, siblings.Count);
+            operation.Root.Parent = operation.Parent;
+            operation.Root.ParentId = operation.Parent?.Id;
+            siblings.Insert(index, operation.Root);
+            if (operation.WasPersisted)
+            {
+                await SaveBookmarkTreeAsync(operation.Root);
+            }
+            await RenumberAndPersistAsync(siblings);
+
+            foreach (var attachment in operation.OcrAttachments)
+            {
+                await _ocrRepository.AttachToBookmarkAsync(attachment.OcrRecordId, attachment.BookmarkId);
+                var record = OcrHistory.FirstOrDefault(item => item.Id == attachment.OcrRecordId);
+                if (record is not null)
+                {
+                    record.BookmarkId = attachment.BookmarkId;
+                }
+            }
+
+            _deletedBookmarkHistory.Pop();
+            SelectedBookmark = operation.Root;
+            OnPropertyChanged(nameof(CanUndoBookmarkDelete));
+            StatusMessage = "已撤回上一次书签删除";
+        }
+        catch (Exception exception)
+        {
+            siblings.Remove(operation.Root);
+            operation.Root.Parent = null;
+            operation.Root.ParentId = null;
+            StatusMessage = $"撤回书签删除失败: {exception.Message}";
+        }
+    }
+
+    private static IEnumerable<Bookmark> EnumerateBookmarkTree(Bookmark root)
+    {
+        yield return root;
+        foreach (var child in root.Children)
+        {
+            foreach (var descendant in EnumerateBookmarkTree(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
+    private bool IsBookmarkInCurrentTree(Bookmark bookmark)
+    {
+        return Bookmarks.Any(root => IsBookmarkInSubtree(root, bookmark));
+    }
+
+    private async Task SaveBookmarkTreeAsync(Bookmark root)
+    {
+        root.UpdatedAtUtc = DateTime.UtcNow;
+        await _bookmarkRepository.SaveAsync(root);
+        foreach (var child in root.Children)
+        {
+            await SaveBookmarkTreeAsync(child);
+        }
+    }
+
+    private sealed record OcrAttachment(Guid OcrRecordId, Guid BookmarkId);
+
+    private sealed record DeletedBookmarkOperation(
+        Bookmark Root,
+        Bookmark? Parent,
+        int OriginalIndex,
+        bool WasPersisted,
+        IReadOnlyList<OcrAttachment> OcrAttachments);
+
+    private static bool IsBookmarkInSubtree(Bookmark root, Bookmark? candidate)
+    {
+        while (candidate is not null)
+        {
+            if (ReferenceEquals(root, candidate))
+            {
+                return true;
+            }
+
+            candidate = candidate.Parent;
+        }
+
+        return false;
+    }
+
+    private async Task RenumberAndPersistAsync(IList<Bookmark> siblings)
+    {
+        for (var index = 0; index < siblings.Count; index++)
+        {
+            var bookmark = siblings[index];
+            bookmark.SortOrder = index;
+            bookmark.UpdatedAtUtc = DateTime.UtcNow;
+            if (bookmark.IsPersisted)
+            {
+                await _bookmarkRepository.SaveAsync(bookmark);
+            }
+        }
     }
 
     public async Task RunOcrSelectionAsync(double x, double y, double width, double height)
@@ -790,6 +1215,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyNavigationChanged();
         NotifyCaptureChanged();
         NotifyBookmarkChanged();
+        OnPropertyChanged(nameof(CanUndoBookmarkDelete));
     }
 
     partial void OnIsOcrBusyChanged(bool value)

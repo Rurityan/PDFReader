@@ -61,4 +61,48 @@ public sealed class BookmarkRepository
         await database.SaveChangesAsync(cancellationToken);
         bookmark.IsPersisted = true;
     }
+
+    public async Task DeleteSubtreeAsync(
+        Guid bookmarkId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var root = await database.Bookmarks
+            .SingleOrDefaultAsync(bookmark => bookmark.Id == bookmarkId, cancellationToken);
+        if (root is null)
+        {
+            return;
+        }
+
+        var allBookmarks = await database.Bookmarks
+            .Where(bookmark => bookmark.PdfDocumentId == root.PdfDocumentId)
+            .ToListAsync(cancellationToken);
+        var subtreeIds = new HashSet<Guid> { bookmarkId };
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            foreach (var bookmark in allBookmarks)
+            {
+                if (bookmark.ParentId is Guid parentId
+                    && subtreeIds.Contains(parentId)
+                    && subtreeIds.Add(bookmark.Id))
+                {
+                    changed = true;
+                }
+            }
+        }
+
+        var ocrRecords = await database.OcrRecords
+            .Where(record => record.BookmarkId != null && subtreeIds.Contains(record.BookmarkId.Value))
+            .ToListAsync(cancellationToken);
+        foreach (var record in ocrRecords)
+        {
+            record.BookmarkId = null;
+        }
+
+        database.Bookmarks.RemoveRange(
+            allBookmarks.Where(bookmark => subtreeIds.Contains(bookmark.Id)));
+        await database.SaveChangesAsync(cancellationToken);
+    }
 }
