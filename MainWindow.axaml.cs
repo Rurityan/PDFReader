@@ -136,7 +136,7 @@ public partial class MainWindow : Window
 
     private async void BookmarkDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (sender is ListBox listBox && listBox.SelectedItem is Bookmark bookmark)
+        if (sender is TreeView treeView && treeView.SelectedItem is Bookmark bookmark)
         {
             await ViewModel.GoToBookmarkAsync(bookmark);
         }

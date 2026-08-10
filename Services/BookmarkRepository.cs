@@ -1,63 +1,64 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
-using PDFReader.Data;
 using PDFReader.Models;
 
 namespace PDFReader.Services;
 
 public sealed class BookmarkRepository
 {
-    private readonly DbContextOptions<ReaderDbContext> _options;
-
-    public BookmarkRepository()
-    {
-        var databasePath = Path.GetFullPath(ReaderSettings.GetDefaultDatabasePath());
-        var appDirectory = Path.GetDirectoryName(databasePath)!;
-        Directory.CreateDirectory(appDirectory);
-
-        _options = new DbContextOptionsBuilder<ReaderDbContext>()
-            .UseSqlite($"Data Source={databasePath}")
-            .Options;
-
-        using var database = new ReaderDbContext(_options);
-        database.Database.EnsureCreated();
-        database.Database.ExecuteSqlRaw("""
-            CREATE TABLE IF NOT EXISTS Bookmarks (
-                Id INTEGER NOT NULL CONSTRAINT PK_Bookmarks PRIMARY KEY AUTOINCREMENT,
-                DocumentPath TEXT NOT NULL,
-                PageNumber INTEGER NOT NULL,
-                Title TEXT NOT NULL,
-                CreatedAtUtc TEXT NOT NULL
-            );
-            """);
-        database.Database.ExecuteSqlRaw("""
-            CREATE INDEX IF NOT EXISTS IX_Bookmarks_DocumentPath_PageNumber
-            ON Bookmarks (DocumentPath, PageNumber);
-            """);
-    }
-
-    public async Task AddAsync(Bookmark bookmark, CancellationToken cancellationToken = default)
-    {
-        await using var database = new ReaderDbContext(_options);
-        database.Bookmarks.Add(bookmark);
-        await database.SaveChangesAsync(cancellationToken);
-    }
+    private readonly ReaderDbContextFactory _contextFactory = new();
 
     public async Task<IReadOnlyList<Bookmark>> GetForDocumentAsync(
-        string documentPath,
+        Guid documentId,
         CancellationToken cancellationToken = default)
     {
-        await using var database = new ReaderDbContext(_options);
+        await using var database = _contextFactory.Create();
         return await database.Bookmarks
             .AsNoTracking()
-            .Where(bookmark => bookmark.DocumentPath == documentPath)
-            .OrderBy(bookmark => bookmark.PageNumber)
+            .Where(bookmark => bookmark.PdfDocumentId == documentId)
+            .OrderBy(bookmark => bookmark.ParentId)
+            .ThenBy(bookmark => bookmark.SortOrder)
             .ThenBy(bookmark => bookmark.CreatedAtUtc)
             .ToListAsync(cancellationToken);
+    }
+
+    public async Task SaveAsync(
+        Bookmark bookmark,
+        CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var existing = await database.Bookmarks
+            .SingleOrDefaultAsync(item => item.Id == bookmark.Id, cancellationToken);
+
+        if (existing is null)
+        {
+            database.Bookmarks.Add(new Bookmark
+            {
+                Id = bookmark.Id,
+                PdfDocumentId = bookmark.PdfDocumentId,
+                ParentId = bookmark.ParentId,
+                PageNumber = bookmark.PageNumber,
+                Title = bookmark.Title,
+                SortOrder = bookmark.SortOrder,
+                CreatedAtUtc = bookmark.CreatedAtUtc,
+                UpdatedAtUtc = bookmark.UpdatedAtUtc,
+            });
+        }
+        else
+        {
+            existing.PdfDocumentId = bookmark.PdfDocumentId;
+            existing.ParentId = bookmark.ParentId;
+            existing.PageNumber = bookmark.PageNumber;
+            existing.Title = bookmark.Title;
+            existing.SortOrder = bookmark.SortOrder;
+            existing.UpdatedAtUtc = bookmark.UpdatedAtUtc;
+        }
+
+        await database.SaveChangesAsync(cancellationToken);
+        bookmark.IsPersisted = true;
     }
 }

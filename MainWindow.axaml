@@ -75,19 +75,24 @@
                     <Border Height="1" Background="#E5E8EB" />
                     <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
                     <StackPanel Spacing="6">
-                        <TextBox Text="{Binding BookmarkTitle}" PlaceholderText="书签名称（可选）" />
-                        <Button Content="添加当前页书签" Command="{Binding AddBookmarkCommand}" HorizontalAlignment="Left" Padding="10,6" />
+                        <TextBox Text="{Binding BookmarkTitle}" PlaceholderText="新书签名称（可选）" />
+                        <Button Content="创建当前页书签" Command="{Binding AddBookmarkCommand}" HorizontalAlignment="Left" Padding="10,6" />
+                        <TextBox Text="{Binding SelectedBookmarkTitle}" IsEnabled="{Binding HasSelectedBookmark}" PlaceholderText="选中书签名称" />
+                        <Button Content="保存选中书签" Command="{Binding SaveBookmarkCommand}" IsEnabled="{Binding HasSelectedBookmark}" HorizontalAlignment="Left" Padding="10,6" />
                     </StackPanel>
-                    <ListBox ItemsSource="{Binding Bookmarks}" Height="230" DoubleTapped="BookmarkDoubleTapped">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate x:DataType="model:Bookmark">
+                    <TreeView ItemsSource="{Binding Bookmarks}"
+                              SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
+                              Height="230"
+                              DoubleTapped="BookmarkDoubleTapped">
+                        <TreeView.ItemTemplate>
+                            <TreeDataTemplate x:DataType="model:Bookmark" ItemsSource="{Binding Children}">
                                 <Grid ColumnDefinitions="Auto,*" Margin="0,3">
                                     <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" Margin="0,0,8,0" />
                                     <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
                                 </Grid>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
+                            </TreeDataTemplate>
+                        </TreeView.ItemTemplate>
+                    </TreeView>
                 </StackPanel>
             </Border>
 
@@ -138,22 +143,29 @@
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <TextBlock Text="OCR 历史记录" FontWeight="SemiBold" Foreground="#414B55" />
-                            <ListBox ItemsSource="{Binding OcrHistory}" Height="180">
+                    <ListBox ItemsSource="{Binding OcrHistory}"
+                             SelectedItem="{Binding SelectedOcrRecord, Mode=TwoWay}"
+                             Height="180">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="model:OcrRecord">
                                         <StackPanel Spacing="2" Margin="0,3">
                                             <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" FontSize="12" />
                                             <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxHeight="42" Foreground="#37414A" FontSize="12" />
                                         </StackPanel>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                    <Button Content="挂载当前 OCR 到选中书签"
+                            Command="{Binding AttachOcrToBookmarkCommand}"
+                            IsEnabled="{Binding CanAttachOcr}"
+                            HorizontalAlignment="Left"
+                            Padding="12,7" />
                         </StackPanel>
                     </Border>
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <TextBlock Text="页面音频" FontWeight="SemiBold" Foreground="#414B55" />
-                            <Button Content="生成当前 OCR 语音" Command="{Binding GenerateSpeechCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="生成选中 OCR 语音" Command="{Binding GenerateSpeechCommand}" IsEnabled="{Binding CanGenerateSpeech}" HorizontalAlignment="Left" Padding="12,7" />
                             <Button Content="播放生成的音频" Command="{Binding PlayGeneratedAudioCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
                             <Button Content="停止播放" Command="{Binding StopAudioCommand}" HorizontalAlignment="Left" Padding="12,7" />
                             <TextBlock Text="{Binding GeneratedAudioPath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
