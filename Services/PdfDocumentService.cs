@@ -44,6 +44,36 @@ public sealed class PdfDocumentService : IDisposable
         return Task.FromResult<Stream>(output);
     }
 
+    public Task<Stream> RenderPageRegionAsync(
+        int pageIndex,
+        double x,
+        double y,
+        double width,
+        double height,
+        double zoom,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        if (_document is null)
+        {
+            throw new InvalidOperationException("No PDF document is open.");
+        }
+
+        var page = _document.Pages[pageIndex];
+        var bounds = page.Bounds;
+        var region = new Rectangle(
+            bounds.X0 + x / zoom,
+            bounds.Y0 + y / zoom,
+            bounds.X0 + (x + width) / zoom,
+            bounds.Y0 + (y + height) / zoom);
+
+        var output = new MemoryStream();
+        _document.WriteImage(pageIndex, region, zoom, PixelFormats.RGB, output, RasterOutputFileTypes.PNG, true);
+        output.Position = 0;
+        return Task.FromResult<Stream>(output);
+    }
+
     public void Close()
     {
         _document?.Dispose();

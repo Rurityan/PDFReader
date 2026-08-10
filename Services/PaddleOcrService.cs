@@ -51,9 +51,22 @@ public sealed class PaddleOcrService
 
             using var process = new Process { StartInfo = startInfo };
             process.Start();
-            var errorTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            var outputTask = process.StandardOutput.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken);
+            var errorTask = process.StandardError.ReadToEndAsync();
+            var outputTask = process.StandardOutput.ReadToEndAsync();
+            try
+            {
+                await process.WaitForExitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException)
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                    await process.WaitForExitAsync();
+                }
+
+                throw;
+            }
             var error = await errorTask;
             _ = await outputTask;
 
@@ -65,7 +78,10 @@ public sealed class PaddleOcrService
             }
 
             await using var resultStream = File.OpenRead(outputPath);
-            var result = await JsonSerializer.DeserializeAsync<OcrResult>(resultStream, cancellationToken: cancellationToken);
+            var result = await JsonSerializer.DeserializeAsync<OcrResult>(
+                resultStream,
+                new JsonSerializerOptions { PropertyNameCaseInsensitive = true },
+                cancellationToken);
             return result ?? new OcrResult();
         }
         finally

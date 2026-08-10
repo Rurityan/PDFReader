@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:PDFReader.ViewModels"
+        xmlns:model="using:PDFReader.Models"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -49,8 +50,21 @@
                         <TextBlock Text="{Binding DocumentPath}" TextWrapping="Wrap" Foreground="#37414A" />
                     </StackPanel>
                     <Border Height="1" Background="#E5E8EB" />
-                    <TextBlock Text="目录" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
-                    <TextBlock Text="打开文档后显示 PDF 目录" Foreground="#9AA2AA" FontSize="13" TextWrapping="Wrap" />
+                    <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <StackPanel Spacing="6">
+                        <TextBox Text="{Binding BookmarkTitle}" PlaceholderText="书签名称（可选）" />
+                        <Button Content="添加当前页书签" Command="{Binding AddBookmarkCommand}" HorizontalAlignment="Left" Padding="10,6" />
+                    </StackPanel>
+                    <ListBox ItemsSource="{Binding Bookmarks}" Height="230" DoubleTapped="BookmarkDoubleTapped">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:Bookmark">
+                                <Grid ColumnDefinitions="Auto,*" Margin="0,3">
+                                    <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" Margin="0,0,8,0" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 </StackPanel>
             </Border>
 
@@ -58,7 +72,19 @@
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
                         <Border Background="White" BoxShadow="0 2 12 0 #24000000" IsVisible="{Binding HasDocument}">
-                            <Image Source="{Binding PageImage}" Stretch="None" />
+                            <Grid x:Name="PageSurface"
+                                  PointerPressed="PageSurfacePointerPressed"
+                                  PointerMoved="PageSurfacePointerMoved"
+                                  PointerReleased="PageSurfacePointerReleased">
+                                <Image Source="{Binding PageImage}" Stretch="None" />
+                                <Canvas IsHitTestVisible="False">
+                                    <Rectangle x:Name="SelectionBox"
+                                               Fill="#334A90E2"
+                                               Stroke="#2B6CB0"
+                                               StrokeThickness="2"
+                                               IsVisible="False" />
+                                </Canvas>
+                            </Grid>
                         </Border>
                         <StackPanel IsVisible="{Binding !HasDocument}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Margin="80">
                             <TextBlock Text="打开一个 PDF 开始阅读" FontSize="22" FontWeight="SemiBold" Foreground="#46515C" HorizontalAlignment="Center" />
@@ -69,24 +95,61 @@
             </Border>
 
             <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
-                <StackPanel Spacing="18">
+                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="18">
                     <TextBlock Text="工作区" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <TextBlock Text="OCR 选区" FontWeight="SemiBold" Foreground="#414B55" />
-                            <TextBlock Text="当前先对整页执行 OCR，选区识别随后加入。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
-                            <Button Content="开始 OCR" Command="{Binding RunOcrCommand}" HorizontalAlignment="Left" Padding="12,7" />
-                            <TextBox Text="{Binding OcrText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150" MaxHeight="280" />
+                            <TextBlock Text="OCR 默认关闭，启动后选择截取模式。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
+                            <Button Content="启动 OCR" Command="{Binding StartOcrCommand}" IsEnabled="{Binding !IsOcrEnabled}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="截取一次" Command="{Binding CaptureOnceCommand}" IsEnabled="{Binding CanSelectCaptureMode}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="持续截取" Command="{Binding ToggleContinuousCaptureCommand}" IsEnabled="{Binding CanSelectCaptureMode}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="取消截取" Command="{Binding CancelCaptureModeCommand}" IsEnabled="{Binding CanCancelCapture}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="停止/放弃 OCR" Command="{Binding CancelOcrCommand}" Click="CancelOcrClick" IsEnabled="{Binding CanCancelOcr}" HorizontalAlignment="Left" Padding="12,7" />
+                            <TextBox Text="{Binding OcrText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150" MaxHeight="280" />
+                            <Button Content="确认并保存 OCR" Command="{Binding SaveOcrCommand}" IsEnabled="{Binding HasPendingOcr}" HorizontalAlignment="Left" Padding="12,7" />
+                            <TextBlock Text="{Binding LastCapturePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="OCR 截图缓存" FontWeight="SemiBold" Foreground="#414B55" />
+                            <CheckBox Content="开启选区截图缓存" IsChecked="{Binding EnableOcrCaptureCache}" />
+                            <TextBox Text="{Binding OcrCaptureDirectory}" PlaceholderText="截图输出目录" />
+                            <Button Content="保存设置" Command="{Binding SaveSettingsCommand}" HorizontalAlignment="Left" Padding="12,7" />
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="OCR 历史记录" FontWeight="SemiBold" Foreground="#414B55" />
+                            <ListBox ItemsSource="{Binding OcrHistory}" Height="180">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="model:OcrRecord">
+                                        <StackPanel Spacing="2" Margin="0,3">
+                                            <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" FontSize="12" />
+                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxHeight="42" Foreground="#37414A" FontSize="12" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
                         </StackPanel>
                     </Border>
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <TextBlock Text="页面音频" FontWeight="SemiBold" Foreground="#414B55" />
-                            <TextBlock Text="生成或关联音频后，可在当前页面播放。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
-                            <Button Content="音频设置" IsEnabled="False" HorizontalAlignment="Left" Padding="12,7" />
+                            <TextBox Text="{Binding TtsBaseUrl}" PlaceholderText="TTS Base URL" />
+                            <TextBox Text="{Binding TtsApiKey}" PlaceholderText="API Key" />
+                            <TextBox Text="{Binding TtsModelType}" PlaceholderText="Model Type" />
+                            <TextBox Text="{Binding TtsVoiceModel}" PlaceholderText="Voice Model" />
+                            <Button Content="生成当前 OCR 语音" Command="{Binding GenerateSpeechCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="播放生成的音频" Command="{Binding PlayGeneratedAudioCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="停止播放" Command="{Binding StopAudioCommand}" HorizontalAlignment="Left" Padding="12,7" />
+                            <TextBlock Text="{Binding GeneratedAudioPath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
                         </StackPanel>
                     </Border>
-                </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
         </Grid>
     </Grid>
