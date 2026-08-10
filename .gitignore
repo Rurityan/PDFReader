@@ -1,0 +1,16 @@
+.venv/
+bin/
+obj/
+.vs/
+
+**/__pycache__/
+*.py[cod]
+
+*.user
+*.suo
+*.log
+
+appsettings.Local.json
+/template.pdf
+/ocr-test.png
+/ocr-result.json

@@ -1,0 +1,93 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:PDFReader.ViewModels"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d"
+        x:Class="PDFReader.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Width="1280"
+        Height="820"
+        MinWidth="900"
+        MinHeight="600"
+        Title="PDF Reader">
+    <Grid RowDefinitions="Auto,Auto,*" Background="#F5F6F8">
+        <Border Grid.Row="0" Background="#20252B" Padding="20,14">
+            <Grid ColumnDefinitions="Auto,*,Auto" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal" Spacing="12">
+                    <TextBlock Text="PDF READER" Foreground="#FFFFFF" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Border Width="1" Height="22" Background="#50565E" />
+                    <TextBlock Text="{Binding DocumentTitle}" Foreground="#C7CDD4" FontSize="14" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Foreground="#AAB2BB" VerticalAlignment="Center" />
+            </Grid>
+        </Border>
+
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,0,1" Padding="18,10">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" VerticalAlignment="Center">
+                <Button Grid.Column="0" Click="OpenFileClick" Padding="14,7" Background="#2B6CB0" Foreground="White" Content="打开 PDF" />
+                <Border Grid.Column="1" Width="1" Height="24" Background="#D9DDE2" Margin="16,0" />
+                <Button Grid.Column="2" Command="{Binding GoPreviousCommand}" Padding="10,7" Content="上一页" />
+                <Button Grid.Column="3" Command="{Binding GoNextCommand}" Padding="10,7" Margin="6,0,0,0" Content="下一页" />
+                <TextBlock Grid.Column="4" Text="{Binding PageIndicator}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" Margin="14,0" />
+                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6">
+                    <Button Command="{Binding ZoomOutCommand}" Padding="9,7" Content="-" />
+                    <TextBlock Text="{Binding ZoomIndicator}" Width="52" TextAlignment="Center" VerticalAlignment="Center" Foreground="#4A5560" />
+                    <Button Command="{Binding ZoomInCommand}" Padding="9,7" Content="+" />
+                </StackPanel>
+                <Button Grid.Column="7" Margin="18,0,0,0" Padding="12,7" Content="标注" IsEnabled="False" />
+                <Button Grid.Column="8" Margin="6,0,0,0" Padding="12,7" Content="朗读" IsEnabled="False" />
+            </Grid>
+        </Border>
+
+        <Grid Grid.Row="2" ColumnDefinitions="270,*,300">
+            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="18,20">
+                <StackPanel Spacing="18">
+                    <TextBlock Text="文档信息" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="文件路径" FontSize="12" Foreground="#89929C" />
+                        <TextBlock Text="{Binding DocumentPath}" TextWrapping="Wrap" Foreground="#37414A" />
+                    </StackPanel>
+                    <Border Height="1" Background="#E5E8EB" />
+                    <TextBlock Text="目录" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <TextBlock Text="打开文档后显示 PDF 目录" Foreground="#9AA2AA" FontSize="13" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Column="1" Background="#E9EBEE" Padding="28,24">
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+                    <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
+                        <Border Background="White" BoxShadow="0 2 12 0 #24000000" IsVisible="{Binding HasDocument}">
+                            <Image Source="{Binding PageImage}" Stretch="None" />
+                        </Border>
+                        <StackPanel IsVisible="{Binding !HasDocument}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Margin="80">
+                            <TextBlock Text="打开一个 PDF 开始阅读" FontSize="22" FontWeight="SemiBold" Foreground="#46515C" HorizontalAlignment="Center" />
+                            <TextBlock Text="支持页面渲染、目录、文本选择、OCR 和语音朗读" Foreground="#7B858F" HorizontalAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </ScrollViewer>
+            </Border>
+
+            <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
+                <StackPanel Spacing="18">
+                    <TextBlock Text="工作区" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="OCR 选区" FontWeight="SemiBold" Foreground="#414B55" />
+                            <TextBlock Text="当前先对整页执行 OCR，选区识别随后加入。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
+                            <Button Content="开始 OCR" Command="{Binding RunOcrCommand}" HorizontalAlignment="Left" Padding="12,7" />
+                            <TextBox Text="{Binding OcrText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150" MaxHeight="280" />
+                        </StackPanel>
+                    </Border>
+                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="页面音频" FontWeight="SemiBold" Foreground="#414B55" />
+                            <TextBlock Text="生成或关联音频后，可在当前页面播放。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
+                            <Button Content="音频设置" IsEnabled="False" HorizontalAlignment="Left" Padding="12,7" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Grid>
+</Window>
