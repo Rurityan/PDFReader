@@ -1,11 +1,13 @@
 param(
     [string]$PythonEnvironmentPath = "",
+    [ValidateSet("win-x64", "win-arm64")]
+    [string]$RuntimeIdentifier = "win-x64",
     [switch]$BuildInstaller
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$publishDirectory = Join-Path $projectRoot "publish\win-x64"
+$publishDirectory = Join-Path $projectRoot "publish\$RuntimeIdentifier"
 
 if ([string]::IsNullOrWhiteSpace($PythonEnvironmentPath)) {
     $PythonEnvironmentPath = Join-Path $projectRoot ".venv"
@@ -21,7 +23,7 @@ try {
         Remove-Item -LiteralPath $publishDirectory -Recurse -Force
     }
     dotnet restore
-    dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true `
+    dotnet publish .\PDFReader.csproj -c Release -r $RuntimeIdentifier --self-contained true `
         -p:DebugType=None -p:DebugSymbols=false -o $publishDirectory
 
     $packagedPython = Join-Path $publishDirectory ".venv"
@@ -44,7 +46,9 @@ try {
         if ([string]::IsNullOrWhiteSpace($isccPath)) {
             throw "Inno Setup compiler ISCC.exe was not found in PATH."
         }
-        & $isccPath .\Installer\PDFReader.iss
+        $installerArchitecture = if ($RuntimeIdentifier -eq "win-arm64") { "arm64" } else { "x64compatible" }
+        $installerPublishDirectory = "..\publish\$RuntimeIdentifier"
+        & $isccPath "/DPublishDir=$installerPublishDirectory" "/DTargetArchitectures=$installerArchitecture" .\Installer\PDFReader.iss
     }
 }
 finally {

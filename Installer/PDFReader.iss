@@ -1,7 +1,12 @@
 #define MyAppName "PDFReader"
 #define MyAppVersion "0.1.0"
 #define MyAppPublisher "PDFReader"
-#define PublishDir "..\publish\win-x64"
+#ifndef PublishDir
+  #define PublishDir "..\publish\win-x64"
+#endif
+#ifndef TargetArchitectures
+  #define TargetArchitectures "x64compatible"
+#endif
 
 [Setup]
 AppId={{8F0D39EF-0F85-4A1E-9B0A-5B98C3B4D8D2}
@@ -16,8 +21,8 @@ SetupIconFile=..\PDFReader.ico
 UninstallDisplayIcon={app}\PDFReader.exe
 Compression=lzma2
 SolidCompression=yes
-ArchitecturesAllowed=x64compatible
-ArchitecturesInstallIn64BitMode=x64compatible
+ArchitecturesAllowed={#TargetArchitectures}
+ArchitecturesInstallIn64BitMode={#TargetArchitectures}
 PrivilegesRequired=lowest
 WizardStyle=modern
 

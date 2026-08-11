@@ -84,6 +84,13 @@ dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p
 .\Scripts\build-release.ps1 -BuildInstaller
 ```
 
+构建 ARM64 发布目录或安装包时，使用 ARM64 Python 创建的 `.venv`：
+
+```powershell
+.\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64
+.\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64 -BuildInstaller
+```
+
 安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
 
 ## 说明
