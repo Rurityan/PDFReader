@@ -26,7 +26,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly PdfAnnotationService _annotationService = new();
     private readonly PdfDocumentRepository _documentRepository = new();
     private readonly SemaphoreSlim _documentOpenGate = new(1, 1);
+    private readonly SemaphoreSlim _pageRenderGate = new(1, 1);
     private readonly Dictionary<Guid, Dictionary<int, IReadOnlyList<PdfAnnotationInfo>>> _annotationCache = new();
+    private readonly Dictionary<int, Bitmap> _prefetchedPageImages = new();
+    private readonly HashSet<int> _prefetchingPageIndexes = new();
     private OcrResultRepository _ocrRepository;
     private BookmarkRepository _bookmarkRepository;
     private ReaderSettings _settings;
@@ -39,6 +42,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private PagePreview? _selectedPagePreview;
     private readonly List<PdfAnnotationChange> _pendingAnnotationChanges = new();
     private bool _isSynchronizingTextFontSize;
+    private int _pageRenderGeneration;
 
     [ObservableProperty]
     private decimal _annotationTextFontSize = 11;
@@ -1180,6 +1184,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _readingCancellation?.Cancel();
         _audioPlaybackService.Stop();
+        ClearPrefetchedPageImages();
         _pdfService.Close();
         PageImage?.Dispose();
         PageImage = null;
@@ -1256,6 +1261,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (HasDocument)
         {
             _zoom = Math.Min(3.0, _zoom + 0.25);
+            ClearPrefetchedPageImages();
             await ShowPageAsync(_currentPage);
         }
     }
@@ -1266,6 +1272,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (HasDocument)
         {
             _zoom = Math.Max(0.5, _zoom - 0.25);
+            ClearPrefetchedPageImages();
             await ShowPageAsync(_currentPage);
         }
     }
@@ -1574,6 +1581,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _readingCancellation?.Cancel();
         _audioPlaybackService.Stop();
         IsAnnotationMode = false;
+        ClearPrefetchedPageImages();
         _pdfService.Close();
         PageImage?.Dispose();
         PageImage = null;
@@ -2788,8 +2796,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             IsBusy = true;
             StatusMessage = $"正在渲染第 {pageIndex + 1} 页...";
-            await using var stream = await _pdfService.RenderPageAsync(pageIndex, _zoom);
-            var image = new Bitmap(stream);
+            Bitmap image;
+            await _pageRenderGate.WaitAsync();
+            try
+            {
+                if (!_prefetchedPageImages.Remove(pageIndex, out image!))
+                {
+                    await using var stream = await _pdfService.RenderPageAsync(pageIndex, _zoom);
+                    image = new Bitmap(stream);
+                }
+            }
+            finally
+            {
+                _pageRenderGate.Release();
+            }
+
             var oldImage = PageImage;
             PageImage = image;
             oldImage?.Dispose();
@@ -2811,6 +2832,88 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsBusy = false;
             NotifyNavigationChanged();
         }
+    }
+
+    public void PreloadAdjacentPages()
+    {
+        if (!HasDocument || IsBusy || IsAnnotationMode || CanCapture)
+        {
+            return;
+        }
+
+        var generation = _pageRenderGeneration;
+        foreach (var pageIndex in Enumerable.Range(_currentPage - 5, 11)
+                     .Where(index => index != _currentPage))
+        {
+            if (pageIndex < 0 || pageIndex >= _pdfService.PageCount
+                || _prefetchedPageImages.ContainsKey(pageIndex)
+                || !_prefetchingPageIndexes.Add(pageIndex))
+            {
+                continue;
+            }
+
+            _ = PrefetchPageAsync(pageIndex, _documentId, _zoom, generation);
+        }
+    }
+
+    private async Task PrefetchPageAsync(int pageIndex, Guid documentId, double zoom, int generation)
+    {
+        try
+        {
+            await Task.Yield();
+            await _pageRenderGate.WaitAsync();
+            try
+            {
+                if (!HasDocument || _documentId != documentId || _pageRenderGeneration != generation)
+                {
+                    return;
+                }
+
+                await using var stream = await _pdfService.RenderPageAsync(pageIndex, zoom);
+                var image = new Bitmap(stream);
+                if (!HasDocument || _documentId != documentId || _pageRenderGeneration != generation)
+                {
+                    image.Dispose();
+                    return;
+                }
+
+                _prefetchedPageImages[pageIndex] = image;
+                foreach (var stalePage in _prefetchedPageImages.Keys
+                             .Where(index => Math.Abs(index - _currentPage) > 5)
+                             .ToArray())
+                {
+                    _prefetchedPageImages[stalePage].Dispose();
+                    _prefetchedPageImages.Remove(stalePage);
+                }
+            }
+            finally
+            {
+                _pageRenderGate.Release();
+            }
+        }
+        catch (Exception)
+        {
+            // Preloading is opportunistic and must never interrupt reading.
+        }
+        finally
+        {
+            if (_pageRenderGeneration == generation)
+            {
+                _prefetchingPageIndexes.Remove(pageIndex);
+            }
+        }
+    }
+
+    private void ClearPrefetchedPageImages()
+    {
+        _pageRenderGeneration++;
+        foreach (var image in _prefetchedPageImages.Values)
+        {
+            image.Dispose();
+        }
+
+        _prefetchedPageImages.Clear();
+        _prefetchingPageIndexes.Clear();
     }
 
     private async Task LoadPagePreviewsAsync()

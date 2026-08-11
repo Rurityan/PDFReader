@@ -542,6 +542,50 @@ public partial class MainWindow : Window
         {
             await ViewModel.DeleteAnnotationAsync(ViewModel.SelectedPdfAnnotation);
             e.Handled = true;
+            return;
+        }
+
+        if (!e.Handled
+            && !ViewModel.IsAnnotationMode
+            && !ViewModel.CanCapture
+            && !IsTextInputFocused(e.Source as Visual))
+        {
+            switch (e.Key)
+            {
+                case Key.Left:
+                case Key.Up:
+                    await ViewModel.GoPreviousCommand.ExecuteAsync(null);
+                    e.Handled = true;
+                    break;
+                case Key.Right:
+                case Key.Down:
+                    await ViewModel.GoNextCommand.ExecuteAsync(null);
+                    e.Handled = true;
+                    break;
+            }
+        }
+    }
+
+    private static bool IsTextInputFocused(Visual? source)
+    {
+        while (source is not null)
+        {
+            if (source is TextBox or NumericUpDown or ComboBox)
+            {
+                return true;
+            }
+
+            source = source.GetVisualParent();
+        }
+
+        return false;
+    }
+
+    private void DocumentScrollViewerScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (e.OffsetDelta.X != 0 || e.OffsetDelta.Y != 0)
+        {
+            ViewModel.PreloadAdjacentPages();
         }
     }
 
