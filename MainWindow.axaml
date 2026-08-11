@@ -352,15 +352,26 @@
                                     </Grid>
                                 </TreeDataTemplate>
                                 <TreeDataTemplate DataType="model:OcrRecord" x:DataType="model:OcrRecord">
-                                    <Grid Classes="ocr-row" ColumnDefinitions="Auto,*,Auto" Margin="0,2" Background="#F5F7F9">
+                                    <Grid Classes="ocr-row" ColumnDefinitions="Auto,*" Margin="0,2" Background="#F5F7F9">
                                         <Border Background="#E7DDF5"
                                                 BorderBrush="#B99BD9"
                                                 BorderThickness="1"
                                                 CornerRadius="3"
                                                 Padding="4,1"
                                                 Margin="0,0,6,0"
-                                                VerticalAlignment="Center">
+                                                VerticalAlignment="Center"
+                                                IsVisible="{Binding !HasAudio}">
                                             <TextBlock Text="OCR" Foreground="#61478A" FontSize="9" FontWeight="SemiBold" />
+                                        </Border>
+                                        <Border Background="#E2F4E8"
+                                                BorderBrush="#74B88A"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="4,1"
+                                                Margin="0,0,6,0"
+                                                VerticalAlignment="Center"
+                                                IsVisible="{Binding HasAudio}">
+                                            <TextBlock Text="VOC" Foreground="#2F855A" FontSize="9" FontWeight="SemiBold" />
                                         </Border>
                                         <TextBlock Grid.Column="1"
                                                    Text="{Binding Title}"
@@ -369,14 +380,6 @@
                                                    FontWeight="SemiBold"
                                                    FontSize="11"
                                                    VerticalAlignment="Center" />
-                                        <Button Grid.Column="2"
-                                                Content="🔊"
-                                                Tag="{Binding}"
-                                                Click="PlayOcrAudioClick"
-                                                IsEnabled="{Binding HasAudio}"
-                                                ToolTip.Tip="播放 OCR 音频"
-                                                Padding="6,3"
-                                                VerticalAlignment="Center" />
                                         <Grid.ContextMenu>
                                             <ContextMenu DataContext="{Binding}">
                                                 <MenuItem Header="查看正文" Tag="{Binding}" Click="ViewOcrTextClick" />

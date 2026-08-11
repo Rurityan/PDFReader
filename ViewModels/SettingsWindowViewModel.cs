@@ -1,4 +1,8 @@
+using System;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using System.Collections.ObjectModel;
+using System.Linq;
 using PDFReader.Models;
 
 namespace PDFReader.ViewModels;
@@ -24,7 +28,9 @@ public partial class SettingsWindowViewModel : ObservableObject
     private string _ttsModelType;
 
     [ObservableProperty]
-    private string _ttsVoiceModel;
+    private TtsVoiceModelOption? _selectedVoiceModel;
+
+    public ObservableCollection<TtsVoiceModelOption> VoiceModels { get; } = new();
 
     public SettingsWindowViewModel(ReaderSettings settings)
     {
@@ -34,7 +40,45 @@ public partial class SettingsWindowViewModel : ObservableObject
         _ttsBaseUrl = settings.TtsBaseUrl;
         _ttsApiKey = settings.TtsApiKey;
         _ttsModelType = settings.TtsModelType;
-        _ttsVoiceModel = settings.TtsVoiceModel;
+        foreach (var voiceModel in settings.TtsVoiceModels ?? new())
+        {
+            VoiceModels.Add(new TtsVoiceModelOption
+            {
+                Name = voiceModel.Name,
+                VoiceId = voiceModel.VoiceId,
+            });
+        }
+
+        SelectedVoiceModel = VoiceModels.FirstOrDefault(
+            voiceModel => string.Equals(voiceModel.Name, settings.TtsVoiceModel, StringComparison.Ordinal));
+    }
+
+    [RelayCommand]
+    private void AddVoiceModel()
+    {
+        var voiceModel = new TtsVoiceModelOption
+        {
+            Name = "新语音",
+            VoiceId = string.Empty,
+        };
+        VoiceModels.Add(voiceModel);
+        SelectedVoiceModel = voiceModel;
+    }
+
+    [RelayCommand]
+    private void RemoveVoiceModel(TtsVoiceModelOption? voiceModel)
+    {
+        if (voiceModel is null)
+        {
+            return;
+        }
+
+        var wasSelected = ReferenceEquals(SelectedVoiceModel, voiceModel);
+        VoiceModels.Remove(voiceModel);
+        if (wasSelected)
+        {
+            SelectedVoiceModel = VoiceModels.FirstOrDefault();
+        }
     }
 
     public ReaderSettings ToSettings()
@@ -47,7 +91,14 @@ public partial class SettingsWindowViewModel : ObservableObject
             TtsBaseUrl = TtsBaseUrl,
             TtsApiKey = TtsApiKey,
             TtsModelType = TtsModelType,
-            TtsVoiceModel = TtsVoiceModel,
+            TtsVoiceModel = SelectedVoiceModel?.Name.Trim() ?? string.Empty,
+            TtsVoiceModels = VoiceModels
+                .Select(voiceModel => new TtsVoiceModelOption
+                {
+                    Name = voiceModel.Name.Trim(),
+                    VoiceId = voiceModel.VoiceId.Trim(),
+                })
+                .ToList(),
         };
     }
 }

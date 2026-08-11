@@ -3,6 +3,7 @@ using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text;
+using System.Linq;
 using PDFReader.Models;
 
 namespace PDFReader.Services;
@@ -69,6 +70,13 @@ public sealed class SettingsService
             TtsApiKey = ProtectApiKey(settings.TtsApiKey),
             TtsModelType = settings.TtsModelType,
             TtsVoiceModel = settings.TtsVoiceModel,
+            TtsVoiceModels = (settings.TtsVoiceModels ?? new())
+                .Select(voiceModel => new TtsVoiceModelOption
+                {
+                    Name = voiceModel.Name,
+                    VoiceId = voiceModel.VoiceId,
+                })
+                .ToList(),
         };
         var directory = Path.GetDirectoryName(_settingsPath)!;
         Directory.CreateDirectory(directory);

@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:PDFReader.ViewModels"
+        xmlns:model="using:PDFReader.Models"
         x:Class="PDFReader.SettingsWindow"
         x:DataType="vm:SettingsWindowViewModel"
         Title="设置"
@@ -30,7 +31,46 @@
                 <TextBlock Text="Model Type" FontSize="12" Foreground="#737E88" />
                 <TextBox Text="{Binding TtsModelType}" />
                 <TextBlock Text="Voice Model" FontSize="12" Foreground="#737E88" />
-                <TextBox Text="{Binding TtsVoiceModel}" />
+                <ComboBox ItemsSource="{Binding VoiceModels}"
+                          SelectedItem="{Binding SelectedVoiceModel, Mode=TwoWay}"
+                          PlaceholderText="选择语音模型">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="model:TtsVoiceModelOption">
+                            <TextBlock Text="{Binding Name}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,4,0,0">
+                    <TextBlock Text="语音模型键值对" FontSize="12" Foreground="#737E88" VerticalAlignment="Center" />
+                    <Button Grid.Column="1"
+                            Content="+"
+                            Command="{Binding AddVoiceModelCommand}"
+                            Width="32"
+                            Height="30"
+                            Padding="0"
+                            ToolTip.Tip="添加语音模型" />
+                    <TextBlock Grid.Column="2"
+                               Text="name / voice_id"
+                               Foreground="#9AA3AC"
+                               FontSize="11"
+                               VerticalAlignment="Center"
+                               Margin="8,0,0,0" />
+                </Grid>
+                <ItemsControl ItemsSource="{Binding VoiceModels}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="model:TtsVoiceModelOption">
+                            <Grid ColumnDefinitions="*,*,Auto" ColumnSpacing="6" Margin="0,3">
+                                <TextBox Text="{Binding Name, Mode=TwoWay}" PlaceholderText="名称" />
+                                <TextBox Grid.Column="1" Text="{Binding VoiceId, Mode=TwoWay}" PlaceholderText="voice_id" />
+                                <Button Grid.Column="2"
+                                        Content="删除"
+                                        Command="{Binding $parent[Window].DataContext.RemoveVoiceModelCommand}"
+                                        CommandParameter="{Binding}"
+                                        Padding="8,5" />
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
             </StackPanel>
         </ScrollViewer>
 

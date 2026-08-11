@@ -12,6 +12,10 @@ public sealed class AudioPlaybackService : IDisposable
     private MediaPlayer? _mediaPlayer;
     private Media? _media;
 
+    public event EventHandler? PlaybackStateChanged;
+
+    public bool IsPlaying => _mediaPlayer?.IsPlaying == true;
+
     public void Play(string filePath)
     {
         if (!File.Exists(filePath))
@@ -63,6 +67,7 @@ public sealed class AudioPlaybackService : IDisposable
     public void Stop()
     {
         _mediaPlayer?.Stop();
+        NotifyPlaybackStateChanged();
     }
 
     private void EnsureInitialized()
@@ -75,11 +80,30 @@ public sealed class AudioPlaybackService : IDisposable
         Core.Initialize();
         _libVlc = new LibVLC();
         _mediaPlayer = new MediaPlayer(_libVlc);
+        _mediaPlayer.EndReached += MediaPlayerStateChanged;
+        _mediaPlayer.Stopped += MediaPlayerStateChanged;
+        _mediaPlayer.EncounteredError += MediaPlayerStateChanged;
+    }
+
+    private void MediaPlayerStateChanged(object? sender, EventArgs e)
+    {
+        NotifyPlaybackStateChanged();
+    }
+
+    private void NotifyPlaybackStateChanged()
+    {
+        PlaybackStateChanged?.Invoke(this, EventArgs.Empty);
     }
 
     public void Dispose()
     {
         _mediaPlayer?.Stop();
+        if (_mediaPlayer is not null)
+        {
+            _mediaPlayer.EndReached -= MediaPlayerStateChanged;
+            _mediaPlayer.Stopped -= MediaPlayerStateChanged;
+            _mediaPlayer.EncounteredError -= MediaPlayerStateChanged;
+        }
         _media?.Dispose();
         _mediaPlayer?.Dispose();
         _libVlc?.Dispose();

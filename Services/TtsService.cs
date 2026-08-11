@@ -6,6 +6,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Linq;
 using PDFReader.Models;
 
 namespace PDFReader.Services;
@@ -31,9 +32,17 @@ public sealed class TtsService
         if (string.IsNullOrWhiteSpace(settings.TtsBaseUrl)
             || string.IsNullOrWhiteSpace(settings.TtsApiKey)
             || string.IsNullOrWhiteSpace(settings.TtsModelType)
-            || string.IsNullOrWhiteSpace(settings.TtsVoiceModel))
+            || string.IsNullOrWhiteSpace(settings.TtsVoiceModel)
+            || settings.TtsVoiceModels is null)
         {
             throw new InvalidOperationException("请先完整填写 TTS 配置。");
+        }
+
+        var selectedVoiceModel = settings.TtsVoiceModels.FirstOrDefault(
+            voiceModel => string.Equals(voiceModel.Name, settings.TtsVoiceModel, StringComparison.Ordinal));
+        if (selectedVoiceModel is null || string.IsNullOrWhiteSpace(selectedVoiceModel.VoiceId))
+        {
+            throw new InvalidOperationException("请选择有效的 TTS Voice Model。");
         }
 
         var endpoint = settings.TtsBaseUrl.TrimEnd('/');
@@ -48,7 +57,7 @@ public sealed class TtsService
         {
             model = settings.TtsModelType.Trim(),
             input = text.Trim(),
-            voice = settings.TtsVoiceModel.Trim(),
+            voice = selectedVoiceModel.VoiceId.Trim(),
             response_format = "mp3",
         }), Encoding.UTF8, "application/json");
 

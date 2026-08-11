@@ -88,6 +88,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isReadingCurrentPage;
 
     [ObservableProperty]
+    private bool _isAudioPlaying;
+
+    [ObservableProperty]
     private AnnotationTool _annotationTool = AnnotationTool.Freehand;
 
     [ObservableProperty]
@@ -128,6 +131,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _ttsVoiceModel = string.Empty;
+    private List<TtsVoiceModelOption> _ttsVoiceModels = new();
 
     [ObservableProperty]
     private string _generatedAudioPath = "尚未生成音频";
@@ -167,6 +171,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public MainWindowViewModel()
     {
+        _audioPlaybackService.PlaybackStateChanged += AudioPlaybackStateChanged;
         var settings = _settingsService.Load();
         _settings = settings;
         _ocrRepository = new OcrResultRepository();
@@ -179,6 +184,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TtsApiKey = settings.TtsApiKey;
         TtsModelType = settings.TtsModelType;
         TtsVoiceModel = settings.TtsVoiceModel;
+        _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
     }
 
     public async Task InitializeAsync()
@@ -265,6 +271,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsReadingCurrentPage;
     public bool CanReadCurrentPage => HasDocument
         && (IsReadingCurrentPage
+            || IsAudioPlaying
             || (!IsBusy && !IsTtsBusy && !IsAnnotationMode
                 && CurrentPageOcrRecords.Any(record => record.HasAudio)));
     public bool CanUndoBookmarkDelete => _deletedBookmarkHistory.Count > 0 && !IsBusy;
@@ -289,7 +296,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AnnotationTool.Eraser => "橡皮擦",
         _ => "文本标注",
     };
-    public string ReadCurrentPageButtonText => IsReadingCurrentPage ? "停止朗读" : "朗读";
+    public string ReadCurrentPageButtonText => IsReadingCurrentPage || IsAudioPlaying
+        ? "停止播放"
+        : "朗读";
     public bool IsBookmarkPaneVisible => !IsPagePreviewPaneVisible;
 
     [ObservableProperty]
@@ -378,9 +387,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ToggleReadCurrentPageAsync()
     {
-        if (IsReadingCurrentPage)
+        if (IsAudioPlaying || IsReadingCurrentPage)
         {
             _readingCancellation?.Cancel();
+            _audioPlaybackService.Stop();
+            SetAudioPlaying(false);
             return;
         }
 
@@ -412,6 +423,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var cancellation = new CancellationTokenSource();
         _readingCancellation = cancellation;
         IsReadingCurrentPage = true;
+        SetAudioPlaying(true);
         StatusMessage = $"正在朗读当前页的 {records.Count} 条 OCR";
         try
         {
@@ -419,6 +431,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             {
                 cancellation.Token.ThrowIfCancellationRequested();
                 GeneratedAudioPath = record.LatestAudioPath!;
+                SetAudioPlaying(true);
                 await _audioPlaybackService.PlayAndWaitAsync(
                     record.LatestAudioPath!,
                     cancellation.Token);
@@ -443,6 +456,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             cancellation.Dispose();
             IsReadingCurrentPage = false;
+            SetAudioPlaying(false);
         }
     }
 
@@ -2004,6 +2018,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TtsApiKey = settings.TtsApiKey;
         TtsModelType = settings.TtsModelType;
         TtsVoiceModel = settings.TtsVoiceModel;
+        _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
 
         _ocrRepository = new OcrResultRepository();
         _bookmarkRepository = new BookmarkRepository();
@@ -2097,6 +2112,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             _audioPlaybackService.Play(record.LatestAudioPath);
+            SetAudioPlaying(true);
             StatusMessage = "正在播放 OCR 音频";
         }
         catch (Exception exception)
@@ -2116,6 +2132,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             _audioPlaybackService.Play(GeneratedAudioPath);
+            SetAudioPlaying(true);
             StatusMessage = "正在播放音频";
         }
         catch (Exception exception)
@@ -2128,7 +2145,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void StopAudio()
     {
         _audioPlaybackService.Stop();
+        SetAudioPlaying(false);
         StatusMessage = "音频已停止";
+    }
+
+    private void AudioPlaybackStateChanged(object? sender, EventArgs e)
+    {
+        SetAudioPlaying(_audioPlaybackService.IsPlaying);
+    }
+
+    private void SetAudioPlaying(bool value)
+    {
+        IsAudioPlaying = value;
     }
 
     private ReaderSettings CreateReaderSettings()
@@ -2142,7 +2170,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             TtsApiKey = TtsApiKey,
             TtsModelType = TtsModelType,
             TtsVoiceModel = TtsVoiceModel,
+            TtsVoiceModels = CloneVoiceModels(_ttsVoiceModels),
         };
+    }
+
+    private static List<TtsVoiceModelOption> CloneVoiceModels(IEnumerable<TtsVoiceModelOption>? voiceModels)
+    {
+        return (voiceModels ?? Enumerable.Empty<TtsVoiceModelOption>())
+            .Select(voiceModel => new TtsVoiceModelOption
+            {
+                Name = voiceModel.Name,
+                VoiceId = voiceModel.VoiceId,
+            })
+            .ToList();
     }
 
     [RelayCommand]
@@ -2507,6 +2547,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanReadCurrentPage));
     }
 
+    partial void OnIsAudioPlayingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ReadCurrentPageButtonText));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+    }
+
     partial void OnIsCurrentPageOcrVisibleChanged(bool value)
     {
         OnPropertyChanged(nameof(CurrentPageOcrButtonText));
@@ -2593,6 +2639,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _ocrCancellation?.Cancel();
         _readingCancellation?.Cancel();
+        _audioPlaybackService.PlaybackStateChanged -= AudioPlaybackStateChanged;
         PageImage?.Dispose();
         ClearPagePreviews();
         _pdfService.Dispose();

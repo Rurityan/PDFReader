@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 
 namespace PDFReader.Models;
@@ -12,6 +13,7 @@ public sealed class ReaderSettings
     public string TtsApiKey { get; set; } = string.Empty;
     public string TtsModelType { get; set; } = string.Empty;
     public string TtsVoiceModel { get; set; } = string.Empty;
+    public List<TtsVoiceModelOption> TtsVoiceModels { get; set; } = new();
 
     public static string GetDefaultCaptureDirectory()
     {
