@@ -17,7 +17,7 @@ namespace PDFReader.ViewModels;
 public partial class MainWindowViewModel : ObservableObject, IDisposable
 {
     private readonly PdfDocumentService _pdfService = new();
-    private readonly PaddleOcrService _ocrService = new();
+    private readonly OcrService _ocrService = new();
     private readonly SettingsService _settingsService = new();
     private readonly TtsService _ttsService = new();
     private readonly AudioPlaybackService _audioPlaybackService = new();

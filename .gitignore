@@ -9,6 +9,8 @@ obj/
 *.user
 *.suo
 *.log
+*.stderr
+ocr-worker-*.json
 
 appsettings.Local.json
 /template.pdf

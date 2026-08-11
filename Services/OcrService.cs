@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 
 namespace PDFReader.Services;
 
-public sealed class PaddleOcrService
+public sealed class OcrService
 {
     public async Task<OcrResult> RecognizeAsync(Stream imageStream, CancellationToken cancellationToken = default)
     {
@@ -33,7 +33,7 @@ public sealed class PaddleOcrService
 
             if (!File.Exists(workerPath))
             {
-                throw new FileNotFoundException("找不到 PaddleOCR worker。", workerPath);
+                throw new FileNotFoundException("找不到 ONNX OCR worker。", workerPath);
             }
 
             var startInfo = new ProcessStartInfo
@@ -73,7 +73,7 @@ public sealed class PaddleOcrService
             if (process.ExitCode != 0)
             {
                 throw new InvalidOperationException(string.IsNullOrWhiteSpace(error)
-                    ? "PaddleOCR 执行失败。"
+                    ? "ONNX OCR 执行失败。"
                     : error.Trim());
             }
 
