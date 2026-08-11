@@ -6,7 +6,8 @@
         Height="250"
         MinWidth="380"
         MinHeight="220"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterOwner"
+        KeyDown="WindowKeyDown">
     <Grid RowDefinitions="Auto,Auto,*,Auto" Background="#F5F6F8" Margin="20">
         <TextBlock Text="书签标题" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
         <TextBox x:Name="TitleInput"

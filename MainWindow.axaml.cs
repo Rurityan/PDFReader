@@ -25,6 +25,7 @@ public partial class MainWindow : Window
     private bool _isOpeningDocument;
     private readonly List<Point> _annotationStrokePoints = new();
     private Bookmark? _bookmarkDragCandidate;
+    private OcrRecord? _ocrDragCandidate;
     private Point _bookmarkDragStart;
     private bool _isDraggingBookmark;
     private Border? _bookmarkDragGhost;
@@ -800,6 +801,25 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void BookmarkTitlePointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (e.GetCurrentPoint(BookmarkTree).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonReleased
+            || _isDraggingBookmark)
+        {
+            return;
+        }
+
+        var bookmark = FindBookmark(sender);
+        if (bookmark is null)
+        {
+            return;
+        }
+
+        ViewModel.SelectedBookmark = bookmark;
+        await ViewModel.GoToBookmarkAsync(bookmark);
+        e.Handled = true;
+    }
+
     private void BookmarkTreePointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (e.GetCurrentPoint(BookmarkTree).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
@@ -814,12 +834,14 @@ public partial class MainWindow : Window
         }
 
         var bookmark = FindBookmark(e.Source);
-        if (bookmark is null)
+        var ocrRecord = FindOcrRecord(e.Source);
+        if (bookmark is null && ocrRecord is null)
         {
             return;
         }
 
         _bookmarkDragCandidate = bookmark;
+        _ocrDragCandidate = ocrRecord;
         _bookmarkDragStart = e.GetPosition(BookmarkTree);
         _isDraggingBookmark = false;
     }
@@ -842,7 +864,7 @@ public partial class MainWindow : Window
 
     private void BookmarkTreePointerMoved(object? sender, PointerEventArgs e)
     {
-        if (_bookmarkDragCandidate is null)
+        if (_bookmarkDragCandidate is null && _ocrDragCandidate is null)
         {
             return;
         }
@@ -861,7 +883,7 @@ public partial class MainWindow : Window
         {
             _isDraggingBookmark = true;
             e.Pointer.Capture(BookmarkTree);
-            BeginBookmarkDragVisual(_bookmarkDragCandidate, current);
+            BeginBookmarkDragVisual(_bookmarkDragCandidate ?? (object)_ocrDragCandidate!, current);
         }
 
         if (_isDraggingBookmark)
@@ -873,12 +895,13 @@ public partial class MainWindow : Window
 
     private async void BookmarkTreePointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (_bookmarkDragCandidate is null)
+        if (_bookmarkDragCandidate is null && _ocrDragCandidate is null)
         {
             return;
         }
 
         var dragged = _bookmarkDragCandidate;
+        var draggedOcr = _ocrDragCandidate;
         var wasDragging = _isDraggingBookmark;
         var point = e.GetPosition(BookmarkTree);
         ResetBookmarkDrag(e.Pointer);
@@ -902,7 +925,14 @@ public partial class MainWindow : Window
 
         var targetY = point.Y - targetOrigin.Value.Y;
         var asChild = targetY >= targetVisual.Bounds.Height * 0.65;
-        await ViewModel.MoveBookmarkAsync(dragged, target, asChild);
+        if (dragged is not null)
+        {
+            await ViewModel.MoveBookmarkAsync(dragged, target, asChild);
+        }
+        else if (draggedOcr is not null)
+        {
+            await ViewModel.MoveOcrToBookmarkAsync(draggedOcr, target);
+        }
         e.Handled = true;
     }
 
@@ -911,10 +941,11 @@ public partial class MainWindow : Window
         pointer?.Capture(null);
         ClearBookmarkDragVisual();
         _bookmarkDragCandidate = null;
+        _ocrDragCandidate = null;
         _isDraggingBookmark = false;
     }
 
-    private void BeginBookmarkDragVisual(Bookmark bookmark, Point point)
+    private void BeginBookmarkDragVisual(object dragItem, Point point)
     {
         BookmarkDragOverlay.Children.Clear();
 
@@ -947,7 +978,12 @@ public partial class MainWindow : Window
             Opacity = 0.72,
             Child = new TextBlock
             {
-                Text = $"{bookmark.PageNumber}  {bookmark.Title}",
+                Text = dragItem switch
+                {
+                    Bookmark bookmark => $"{bookmark.PageNumber}  {bookmark.Title}",
+                    OcrRecord record => $"OCR  {record.Title}",
+                    _ => string.Empty,
+                },
                 Foreground = new SolidColorBrush(Color.Parse("#263746")),
                 TextWrapping = TextWrapping.Wrap,
                 MaxHeight = 42,
@@ -1057,12 +1093,33 @@ public partial class MainWindow : Window
         return FindBookmarkVisual(source)?.DataContext as Bookmark;
     }
 
+    private static OcrRecord? FindOcrRecord(object? source)
+    {
+        return FindOcrRecordVisual(source)?.DataContext as OcrRecord;
+    }
+
     private static Control? FindBookmarkVisual(object? source)
     {
         var visual = source as Visual;
         while (visual is not null)
         {
             if (visual is Control control && control.Classes.Contains("bookmark-row"))
+            {
+                return control;
+            }
+
+            visual = visual.GetVisualParent();
+        }
+
+        return null;
+    }
+
+    private static Control? FindOcrRecordVisual(object? source)
+    {
+        var visual = source as Visual;
+        while (visual is not null)
+        {
+            if (visual is Control control && control.Classes.Contains("ocr-row"))
             {
                 return control;
             }

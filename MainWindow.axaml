@@ -50,6 +50,10 @@
             <Setter Property="Background" Value="#E6A23C" />
             <Setter Property="Foreground" Value="#20252B" />
         </Style>
+        <Style Selector="TextBlock.bookmark-title:pointerover">
+            <Setter Property="TextDecorations" Value="Underline" />
+            <Setter Property="Cursor" Value="Hand" />
+        </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,Auto,*" Background="#F5F6F8">
         <Border Grid.Row="0" Background="#20252B" Padding="20,14">
@@ -339,11 +343,16 @@
                                             </ContextMenu>
                                         </Grid.ContextMenu>
                                         <TextBlock Text="{Binding PageNumber}" Foreground="#2B6CB0" Margin="0,0,8,0" />
-                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
+                                        <TextBlock Grid.Column="1"
+                                                   Classes="bookmark-title"
+                                                   Text="{Binding Title}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="#37414A"
+                                                   PointerReleased="BookmarkTitlePointerReleased" />
                                     </Grid>
                                 </TreeDataTemplate>
                                 <TreeDataTemplate DataType="model:OcrRecord" x:DataType="model:OcrRecord">
-                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2" Background="#F5F7F9">
+                                    <Grid Classes="ocr-row" ColumnDefinitions="Auto,*,Auto" Margin="0,2" Background="#F5F7F9">
                                         <Border Background="#E7DDF5"
                                                 BorderBrush="#B99BD9"
                                                 BorderThickness="1"

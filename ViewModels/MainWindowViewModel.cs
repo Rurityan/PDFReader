@@ -1533,6 +1533,37 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    public async Task MoveOcrToBookmarkAsync(OcrRecord? record, Bookmark? target)
+    {
+        if (record is null || target is null || !HasDocument || IsBusy
+            || record.PdfDocumentId != _documentId)
+        {
+            return;
+        }
+
+        if (record.BookmarkId == target.Id)
+        {
+            StatusMessage = "OCR 已挂载在该书签下";
+            return;
+        }
+
+        try
+        {
+            await SaveBookmarkAndAncestorsAsync(target);
+            await _ocrRepository.AttachToBookmarkAsync(record.Id, target.Id);
+            record.BookmarkId = target.Id;
+            SelectedBookmark = target;
+            SelectedOcrRecord = record;
+            RefreshBookmarkDisplayTree();
+            StatusMessage = "OCR 已重新挂载到目标书签";
+            NotifyBookmarkChanged();
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"重新挂载 OCR 失败: {exception.Message}";
+        }
+    }
+
     [RelayCommand]
     public async Task GoToBookmarkAsync(Bookmark? bookmark)
     {

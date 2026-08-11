@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Input;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 
@@ -29,6 +30,17 @@ public partial class BookmarkCreateWindow : Window
         {
             Close(new BookmarkCreationRequest(title, page));
         }
+    }
+
+    private void WindowKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || e.KeyModifiers != KeyModifiers.None)
+        {
+            return;
+        }
+
+        ConfirmClick(this, new RoutedEventArgs());
+        e.Handled = true;
     }
 
     private void CancelClick(object? sender, RoutedEventArgs e)
