@@ -118,8 +118,10 @@ def main():
                 path = audio.get("filePath")
                 if path and __import__("os").path.isfile(path):
                     name = "audio/{}-{}".format(record["id"], __import__("os").path.basename(path))
+                    if name in doc.embfile_names(): doc.embfile_del(name)
                     with open(path, "rb") as audio_source:
                         doc.embfile_add(name, audio_source.read(), filename=__import__("os").path.basename(path), desc="PDF Reader OCR audio")
+        if "PDFReader-metadata.json" in doc.embfile_names(): doc.embfile_del("PDFReader-metadata.json")
         doc.embfile_add("PDFReader-metadata.json", json.dumps(manifest, ensure_ascii=False).encode("utf-8"), filename="PDFReader-metadata.json", desc="PDF Reader OCR and audio metadata")
         doc.save(output_path, garbage=3, deflate=True); doc.close(); return
     if command == "restore":

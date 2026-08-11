@@ -108,4 +108,56 @@ public sealed class OcrResultRepository
         database.SaveChanges();
         return resources;
     }
+
+    public IReadOnlyList<string> CleanupOrphanedData()
+    {
+        using var database = _contextFactory.Create();
+        var documents = database.PdfDocuments.Select(document => document.Id).ToHashSet();
+        var bookmarks = database.Bookmarks.ToList();
+        var bookmarkById = bookmarks.ToDictionary(bookmark => bookmark.Id);
+        var records = database.OcrRecords.Include(record => record.TtsAudios).ToList();
+
+        // A record is only valid when it remains attached to a bookmark in the same PDF document.
+        var orphanedRecords = records.Where(record =>
+                !documents.Contains(record.PdfDocumentId)
+                || record.BookmarkId is not Guid bookmarkId
+                || !bookmarkById.TryGetValue(bookmarkId, out var bookmark)
+                || bookmark.PdfDocumentId != record.PdfDocumentId)
+            .ToList();
+        var orphanedRecordIds = orphanedRecords.Select(record => record.Id).ToHashSet();
+        var orphanedAudios = database.TtsAudioRecords
+            .Where(audio => !database.OcrRecords.Any(record => record.Id == audio.OcrRecordId))
+            .ToList();
+        var orphanedBookmarks = bookmarks
+            .Where(bookmark => !documents.Contains(bookmark.PdfDocumentId))
+            .ToList();
+
+        // Keep a child bookmark when only its parent reference is stale; it becomes a root bookmark.
+        foreach (var bookmark in bookmarks.Where(bookmark =>
+                     bookmark.ParentId is Guid parentId && !bookmarkById.ContainsKey(parentId)))
+        {
+            bookmark.ParentId = null;
+        }
+
+        var resources = orphanedRecords
+            .SelectMany(record => new[] { record.CapturePath }
+                .Concat(record.TtsAudios.Select(audio => audio.FilePath)))
+            .Concat(orphanedAudios.Select(audio => audio.FilePath))
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        database.TtsAudioRecords.RemoveRange(orphanedAudios);
+        database.TtsAudioRecords.RemoveRange(orphanedRecords.SelectMany(record => record.TtsAudios));
+        database.OcrRecords.RemoveRange(orphanedRecords);
+        database.Bookmarks.RemoveRange(orphanedBookmarks);
+        if (orphanedRecords.Count > 0 || orphanedAudios.Count > 0 || orphanedBookmarks.Count > 0
+            || database.ChangeTracker.HasChanges())
+        {
+            database.SaveChanges();
+        }
+
+        return resources;
+    }
 }

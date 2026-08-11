@@ -20,7 +20,7 @@ PDFReader 是一款基于 Avalonia 的桌面 PDF 阅读与标注软件，当前�
 - Avalonia 12.1.1、Fluent Theme、Inter Fonts
 - CommunityToolkit.Mvvm 8.4.2
 - MuPDFCore 1.10.2：PDF 页面渲染
-- PDFsharp 6.2.4：PDF 标注对象的读取、创建、删除和保存
+- PyMuPDF 1.26.7：PDF 标注对象的读取、创建、删除、增量保存，以及全量导出元数据附件
 - Entity Framework Core SQLite 10.0.10：应用数据库
 - SQLitePCLRaw.lib.e_sqlite3 2.1.12：SQLite 原生运行库
 - LibVLCSharp 3.10.1、VideoLAN.LibVLC.Windows 3.0.23.1：音频播放
@@ -101,6 +101,19 @@ Voice Model 维护一个可增删的键值对列表。配置中的数组元素�
 
 API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱敏值。TTS 服务会在 Base URL 后补充 `/audio/speech`（如果用户没有填写该路径）。
 
+## 4.1 PDF 全量导出与恢复
+
+“文件 > 全量导出 PDF”生成新的 PDF 副本，不修改当前打开的文件。导出内容包括：
+
+- 已保存的 PDF 标注；
+- 标准 PDF Outline，供其他阅读器显示书签目录；
+- 作为 PDF Embedded File 的 TTS 音频；
+- `PDFReader-metadata.json` 附件，保存书签 UUID/父级关系、OCR 文本与选区、音频关联。
+
+导入文件时，若当前 PDF 记录没有本地书签，应用先尝试读取 `PDFReader-metadata.json` 并恢复书签树、OCR 与音频文件；未检测到该附件时，回退到读取普通 PDF Outline。恢复副本会分配新的本地 UUID，避免与原 PDF 记录的数据库主键冲突。
+
+应用启动后会在后台运行一次一致性清理：删除无效文档或书签关联的 OCR、无主音频记录及其已知资源；失效的书签父级关系会被提升为根书签。该任务不扫描资源目录删除未被数据库引用的任意文件。
+
 ## 5. 数据库结构
 
 数据库使用 SQLite，由 `ReaderDbContext` 管理。主键均为 UUID。
@@ -114,6 +127,7 @@ API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱�
 | `Title` | 文档标题 |
 | `CreatedAtUtc` | 创建时间 |
 | `LastOpenedAtUtc` | 最近打开时间 |
+| `IsArchived` | 是否归档 |
 
 ### `Bookmarks`
 

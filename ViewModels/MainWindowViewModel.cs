@@ -192,7 +192,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settings = settings;
         _ocrRepository = new OcrResultRepository();
         _bookmarkRepository = new BookmarkRepository();
-        DeleteResources(_ocrRepository.RemoveUnattachedRecords());
         EnablePagePreviews = settings.EnablePagePreviews;
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
@@ -221,11 +220,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StatusMessage = documents.Count == 0
                 ? "暂无已保存的 PDF 文件记录"
                 : $"已加载 {documents.Count} 个 PDF 文件记录，请从“打开 PDF”导入工作区";
+            ScheduleStartupCleanup();
         }
         catch (Exception exception)
         {
             StatusMessage = $"加载 PDF 文档列表失败: {exception.Message}";
         }
+    }
+
+    private void ScheduleStartupCleanup()
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                DeleteResources(_ocrRepository.CleanupOrphanedData());
+            }
+            catch
+            {
+                // Startup cleanup is best-effort and must never affect document availability.
+            }
+        });
     }
 
     public void SetStatus(string message) => StatusMessage = message;
@@ -1657,25 +1672,46 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             if (metadata is null || (metadata.Bookmarks.Count == 0 && metadata.OcrRecords.Count == 0)) return false;
 
             var now = DateTime.UtcNow;
-            var bookmarkIds = new HashSet<Guid>(metadata.Bookmarks.Select(bookmark => bookmark.Id));
+            var bookmarkIds = metadata.Bookmarks
+                .Where(bookmark => bookmark.Id != Guid.Empty)
+                .ToDictionary(bookmark => bookmark.Id, _ => Guid.NewGuid());
             foreach (var item in metadata.Bookmarks)
             {
+                var newId = item.Id != Guid.Empty && bookmarkIds.TryGetValue(item.Id, out var mappedId)
+                    ? mappedId
+                    : Guid.NewGuid();
+                Guid? parentId = item.ParentId is Guid parentIdValue && bookmarkIds.TryGetValue(parentIdValue, out var mappedParentId)
+                    ? mappedParentId : null;
                 var bookmark = new Bookmark
                 {
-                    Id = item.Id == Guid.Empty ? Guid.NewGuid() : item.Id,
+                    Id = newId,
                     PdfDocumentId = _documentId,
-                    ParentId = item.ParentId is Guid parentId && bookmarkIds.Contains(parentId) ? parentId : null,
+                    ParentId = parentId,
                     PageNumber = Math.Max(1, item.Page), Title = item.Title, SortOrder = item.SortOrder,
                     CreatedAtUtc = now, UpdatedAtUtc = now,
                 };
                 await _bookmarkRepository.SaveAsync(bookmark);
             }
+
+            Bookmark? recoveryBookmark = null;
+            if (metadata.OcrRecords.Any(record => record.BookmarkId is Guid bookmarkId && !bookmarkIds.ContainsKey(bookmarkId)))
+            {
+                recoveryBookmark = new Bookmark
+                {
+                    Id = Guid.NewGuid(), PdfDocumentId = _documentId, ParentId = null,
+                    PageNumber = Math.Max(1, metadata.OcrRecords.First().PageNumber), Title = "恢复的 OCR",
+                    SortOrder = metadata.Bookmarks.Where(bookmark => bookmark.ParentId is null).Select(bookmark => bookmark.SortOrder).DefaultIfEmpty(-1).Max() + 1,
+                    CreatedAtUtc = now, UpdatedAtUtc = now,
+                };
+                await _bookmarkRepository.SaveAsync(recoveryBookmark);
+            }
             foreach (var item in metadata.OcrRecords)
             {
                 var record = new OcrRecord
                 {
-                    Id = item.Id == Guid.Empty ? Guid.NewGuid() : item.Id, PdfDocumentId = _documentId,
-                    BookmarkId = item.BookmarkId is Guid bookmarkId && bookmarkIds.Contains(bookmarkId) ? bookmarkId : null,
+                    Id = Guid.NewGuid(), PdfDocumentId = _documentId,
+                    BookmarkId = item.BookmarkId is Guid bookmarkId && bookmarkIds.TryGetValue(bookmarkId, out var mappedBookmarkId)
+                        ? mappedBookmarkId : recoveryBookmark?.Id,
                     PageNumber = Math.Max(1, item.PageNumber), X = item.X, Y = item.Y, Width = item.Width, Height = item.Height,
                     CaptureZoom = item.CaptureZoom > 0 ? item.CaptureZoom : 1, Title = item.Title, Text = item.Text,
                     CreatedAtUtc = item.CreatedAtUtc == default ? now : item.CreatedAtUtc,
@@ -1685,7 +1721,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 {
                     await _ocrRepository.AddAudioAsync(new TtsAudioRecord
                     {
-                        Id = audio.Id == Guid.Empty ? Guid.NewGuid() : audio.Id, OcrRecordId = record.Id,
+                        Id = Guid.NewGuid(), OcrRecordId = record.Id,
                         FilePath = audio.FilePath, CreatedAtUtc = audio.CreatedAtUtc == default ? now : audio.CreatedAtUtc,
                     });
                 }
