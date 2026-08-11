@@ -13,6 +13,9 @@ public partial class SettingsWindowViewModel : ObservableObject
     private string _audioDirectory;
 
     [ObservableProperty]
+    private bool _enablePagePreviews;
+
+    [ObservableProperty]
     private bool _enableOcrCaptureCache;
 
     [ObservableProperty]
@@ -35,6 +38,7 @@ public partial class SettingsWindowViewModel : ObservableObject
     public SettingsWindowViewModel(ReaderSettings settings)
     {
         _audioDirectory = settings.AudioDirectory;
+        _enablePagePreviews = settings.EnablePagePreviews;
         _enableOcrCaptureCache = settings.EnableOcrCaptureCache;
         _ocrCaptureDirectory = settings.OcrCaptureDirectory;
         _ttsBaseUrl = settings.TtsBaseUrl;
@@ -86,6 +90,7 @@ public partial class SettingsWindowViewModel : ObservableObject
         return new ReaderSettings
         {
             AudioDirectory = AudioDirectory,
+            EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             OcrCaptureDirectory = OcrCaptureDirectory,
             TtsBaseUrl = TtsBaseUrl,

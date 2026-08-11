@@ -68,5 +68,28 @@ public sealed class ReaderDbContextFactory
         }
 
         database.Database.EnsureCreated();
+        EnsureColumn(database, "PdfDocuments", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
+    }
+
+    private static void EnsureColumn(ReaderDbContext database, string table, string column, string definition)
+    {
+        var connection = database.Database.GetDbConnection();
+        var wasOpen = connection.State == ConnectionState.Open;
+        if (!wasOpen) connection.Open();
+        try
+        {
+            using var check = connection.CreateCommand();
+            check.CommandText = $"SELECT EXISTS(SELECT 1 FROM pragma_table_info('{table}') WHERE name = '{column}');";
+            if (Convert.ToInt64(check.ExecuteScalar()) == 0)
+            {
+                using var alter = connection.CreateCommand();
+                alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
+                alter.ExecuteNonQuery();
+            }
+        }
+        finally
+        {
+            if (!wasOpen) connection.Close();
+        }
     }
 }

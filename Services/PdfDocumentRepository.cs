@@ -72,6 +72,15 @@ public sealed class PdfDocumentRepository
         await database.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SetArchivedAsync(Guid documentId, bool archived, CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var document = await database.PdfDocuments.SingleOrDefaultAsync(item => item.Id == documentId, cancellationToken);
+        if (document is null) return;
+        document.IsArchived = archived;
+        await database.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task RebindAsync(
         Guid documentId,
         string newFilePath,

@@ -32,6 +32,7 @@ public sealed class PdfAnnotationInfo
     public IReadOnlyList<PdfAnnotationPoint> Points { get; init; } = Array.Empty<PdfAnnotationPoint>();
     public string StrokeColor { get; init; } = "#2B6CB0";
     public double StrokeWidth { get; init; } = 2;
+    public double FontSize { get; init; } = 11;
 }
 
 public sealed record PdfAnnotationPoint(double X, double Y);

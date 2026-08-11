@@ -1,0 +1,7 @@
+<Window xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.DocumentRemovalConfirmWindow" Title="彻底移除 PDF" Width="480" Height="230" WindowStartupLocation="CenterOwner">
+  <Grid RowDefinitions="*,Auto" Background="#F5F6F8" Margin="24">
+    <StackPanel Spacing="12"><TextBlock Text="彻底移除 PDF 文件记录？" FontSize="18" FontWeight="SemiBold" /><TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="#4A5560" /></StackPanel>
+    <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8"><Button Content="取消" Click="CancelClick" /><Button Content="彻底移除" Click="ConfirmClick" Background="#B42318" Foreground="White" /></StackPanel>
+  </Grid>
+</Window>

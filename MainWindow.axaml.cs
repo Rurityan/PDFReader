@@ -35,6 +35,9 @@ public partial class MainWindow : Window
     private bool _sidebarCollapsed;
     private double _sidebarWidth = 230;
     private bool _closingAfterAnnotationDecision;
+    private TextResizeHandle? _activeTextResizeHandle;
+    private Canvas? _activeTextResizeLayer;
+    private Point _textResizeStart;
 
     public MainWindow()
     {
@@ -290,7 +293,7 @@ public partial class MainWindow : Window
                         Text = annotation.Contents ?? string.Empty,
                         TextWrapping = TextWrapping.Wrap,
                         Foreground = annotationBrush,
-                        FontSize = Math.Max(10, 11 * scale),
+                        FontSize = Math.Max(6, annotation.FontSize * scale),
                     },
                 });
             }
@@ -320,6 +323,14 @@ public partial class MainWindow : Window
                     BorderThickness = new Thickness(2),
                     IsHitTestVisible = false,
                 });
+                if (annotation.Type is PdfAnnotationType.Text or PdfAnnotationType.Rectangle)
+                {
+                    AddTextResizeHandles(layer, annotation);
+                }
+                else if (annotation.Type == PdfAnnotationType.Line)
+                {
+                    AddLineResizeHandles(layer, annotation, left, top, scale);
+                }
             }
 
             var deleteItem = new MenuItem
@@ -358,6 +369,143 @@ public partial class MainWindow : Window
             e.Handled = true;
         }
     }
+
+    private void AddTextResizeHandles(Canvas layer, PdfAnnotationInfo annotation)
+    {
+        foreach (var (name, x, y) in new[]
+        {
+            ("LT", 0d, 0d), ("T", layer.Width / 2, 0d), ("RT", layer.Width, 0d),
+            ("R", layer.Width, layer.Height / 2), ("RB", layer.Width, layer.Height),
+            ("B", layer.Width / 2, layer.Height), ("LB", 0d, layer.Height), ("L", 0d, layer.Height / 2),
+        })
+        {
+            var handle = new Border
+            {
+                Width = 8, Height = 8, Tag = new TextResizeHandle(annotation, name),
+                Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.Parse("#D79A00")),
+                BorderThickness = new Thickness(1),
+                Cursor = new Cursor(StandardCursorType.SizeAll),
+            };
+            handle.PointerPressed += TextResizeHandlePointerPressed;
+            handle.PointerMoved += TextResizeHandlePointerMoved;
+            handle.PointerReleased += TextResizeHandlePointerReleased;
+            Canvas.SetLeft(handle, x - 4);
+            Canvas.SetTop(handle, y - 4);
+            layer.Children.Add(handle);
+        }
+    }
+
+    private void AddLineResizeHandles(Canvas layer, PdfAnnotationInfo annotation, double left, double top, double scale)
+    {
+        foreach (var (handle, point) in new[] { ("P1", new PdfAnnotationPoint(annotation.StartX, annotation.StartY)), ("P2", new PdfAnnotationPoint(annotation.EndX, annotation.EndY)) })
+        {
+            var control = new Border { Width = 10, Height = 10, Tag = new TextResizeHandle(annotation, handle), Background = Brushes.White, BorderBrush = new SolidColorBrush(Color.Parse("#D79A00")), BorderThickness = new Thickness(1), Cursor = new Cursor(StandardCursorType.SizeAll) };
+            control.PointerPressed += TextResizeHandlePointerPressed;
+            control.PointerMoved += TextResizeHandlePointerMoved;
+            control.PointerReleased += TextResizeHandlePointerReleased;
+            Canvas.SetLeft(control, point.X * scale - left + 5);
+            Canvas.SetTop(control, point.Y * scale - top + 5);
+            layer.Children.Add(control);
+        }
+    }
+
+    private void TextResizeHandlePointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Control control && control.Tag is TextResizeHandle handle)
+        {
+            _activeTextResizeHandle = handle;
+            _activeTextResizeLayer = control.Parent as Canvas;
+            if (_activeTextResizeLayer is not null)
+            {
+                _activeTextResizeLayer.Opacity = 0.25;
+            }
+            _textResizeStart = e.GetPosition(PageSurface);
+            e.Pointer.Capture(control);
+            e.Handled = true;
+        }
+    }
+
+    private void TextResizeHandlePointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        if (_activeTextResizeHandle is { } handle)
+        {
+            var end = e.GetPosition(PageSurface);
+            var deltaX = (end.X - _textResizeStart.X) / ViewModel.CurrentZoom;
+            var deltaY = (end.Y - _textResizeStart.Y) / ViewModel.CurrentZoom;
+            if (handle.Handle is "P1" or "P2") ViewModel.ResizeLineAnnotation(handle.Annotation, handle.Handle, deltaX, deltaY);
+            else ViewModel.ResizeTextAnnotation(handle.Annotation, handle.Handle, deltaX, deltaY);
+            _activeTextResizeHandle = null;
+            if (_activeTextResizeLayer is not null)
+            {
+                _activeTextResizeLayer.Opacity = 1;
+                _activeTextResizeLayer = null;
+            }
+            ClearAnnotationStrokePreview();
+            e.Pointer.Capture(null);
+            e.Handled = true;
+        }
+    }
+
+    private void TextResizeHandlePointerMoved(object? sender, PointerEventArgs e)
+    {
+        if (_activeTextResizeHandle is not { } handle)
+        {
+            return;
+        }
+
+        var point = e.GetPosition(PageSurface);
+        var deltaX = (point.X - _textResizeStart.X) / ViewModel.CurrentZoom;
+        var deltaY = (point.Y - _textResizeStart.Y) / ViewModel.CurrentZoom;
+        if (handle.Handle is "P1" or "P2")
+        {
+            var startX = handle.Annotation.StartX + (handle.Handle == "P1" ? deltaX : 0);
+            var startY = handle.Annotation.StartY + (handle.Handle == "P1" ? deltaY : 0);
+            var endX = handle.Annotation.EndX + (handle.Handle == "P2" ? deltaX : 0);
+            var endY = handle.Annotation.EndY + (handle.Handle == "P2" ? deltaY : 0);
+            RenderLineAnnotationPreview(
+                new Point(startX * ViewModel.CurrentZoom, startY * ViewModel.CurrentZoom),
+                new Point(endX * ViewModel.CurrentZoom, endY * ViewModel.CurrentZoom),
+                handle.Annotation);
+            return;
+        }
+
+        var left = handle.Annotation.X;
+        var top = handle.Annotation.Y;
+        var right = left + handle.Annotation.Width;
+        var bottom = top + handle.Annotation.Height;
+        if (handle.Handle.Contains('L')) left += deltaX;
+        if (handle.Handle.Contains('R')) right += deltaX;
+        if (handle.Handle.Contains('T')) top += deltaY;
+        if (handle.Handle.Contains('B')) bottom += deltaY;
+        if (right - left < 24) { if (handle.Handle.Contains('L')) left = right - 24; else right = left + 24; }
+        if (bottom - top < 20) { if (handle.Handle.Contains('T')) top = bottom - 20; else bottom = top + 20; }
+        AnnotationStrokePreview.Children.Clear();
+        var annotationBrush = new SolidColorBrush(Color.Parse(handle.Annotation.StrokeColor));
+        var preview = new Border
+        {
+            Width = (right - left) * ViewModel.CurrentZoom,
+            Height = (bottom - top) * ViewModel.CurrentZoom,
+            BorderBrush = annotationBrush,
+            BorderThickness = new Thickness(Math.Max(1, handle.Annotation.StrokeWidth * ViewModel.CurrentZoom)),
+            Background = new SolidColorBrush(Color.Parse("#16D79A00")),
+        };
+        if (handle.Annotation.Type == PdfAnnotationType.Text)
+        {
+            preview.Padding = new Thickness(3);
+            preview.Child = new TextBlock
+            {
+                Text = handle.Annotation.Contents ?? string.Empty,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = annotationBrush,
+                FontSize = Math.Max(6, handle.Annotation.FontSize * ViewModel.CurrentZoom),
+            };
+        }
+        Canvas.SetLeft(preview, left * ViewModel.CurrentZoom);
+        Canvas.SetTop(preview, top * ViewModel.CurrentZoom);
+        AnnotationStrokePreview.Children.Add(preview);
+    }
+
+    private sealed record TextResizeHandle(PdfAnnotationInfo Annotation, string Handle);
 
     private async void EditPdfAnnotationClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -509,6 +657,10 @@ public partial class MainWindow : Window
                 RenderAnnotationStrokePreview();
             }
         }
+        else if (_isSelecting && ViewModel.IsAnnotationMode && ViewModel.AnnotationTool == AnnotationTool.Line)
+        {
+            RenderLineAnnotationPreview(_selectionStart, e.GetPosition(PageSurface));
+        }
         else if (_isSelecting)
         {
             UpdateSelectionBox(e.GetPosition(PageSurface));
@@ -526,6 +678,7 @@ public partial class MainWindow : Window
         var selection = GetSelectionRect(end);
         _isSelecting = false;
         e.Pointer.Capture(null);
+        ClearAnnotationStrokePreview();
 
         if (ViewModel.IsAnnotationMode
             && ViewModel.AnnotationTool is AnnotationTool.Freehand or AnnotationTool.Eraser)
@@ -724,6 +877,20 @@ public partial class MainWindow : Window
         }
     }
 
+    private void RenderLineAnnotationPreview(Point start, Point end, PdfAnnotationInfo? annotation = null)
+    {
+        AnnotationStrokePreview.Children.Clear();
+        AnnotationStrokePreview.Children.Add(new Line
+        {
+            StartPoint = start,
+            EndPoint = end,
+            Stroke = annotation is null
+                ? ViewModel.AnnotationColorBrush
+                : new SolidColorBrush(Color.Parse(annotation.StrokeColor)),
+            StrokeThickness = Math.Max(1, (annotation?.StrokeWidth ?? (double)ViewModel.AnnotationStrokeWidth) * ViewModel.CurrentZoom),
+        });
+    }
+
     private void ClearAnnotationStrokePreview()
     {
         AnnotationStrokePreview.Children.Clear();
@@ -750,7 +917,10 @@ public partial class MainWindow : Window
     {
         var picker = new PdfDocumentPickerWindow(
             ViewModel.AvailableDocuments,
-            ViewModel.AddPdfFilesAsync);
+            ViewModel.ArchivedDocuments,
+            ViewModel.AddPdfFilesAsync,
+            ViewModel.SetDocumentArchivedAsync,
+            ViewModel.DeleteDocumentAsync);
         var selectedDocuments = await picker.ShowDialog<IReadOnlyList<PdfDocument>?>(this);
         if (selectedDocuments is not null && selectedDocuments.Count > 0)
         {
@@ -875,6 +1045,19 @@ public partial class MainWindow : Window
             await ViewModel.SavePdfAsAsync(path);
         }
 
+        e.Handled = true;
+    }
+
+    private async void ExportPortablePdfClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "全量导出 PDF",
+            SuggestedFileName = $"{System.IO.Path.GetFileNameWithoutExtension(ViewModel.DocumentPath)}-export.pdf",
+            FileTypeChoices = new[] { new FilePickerFileType("PDF 文档") { Patterns = new[] { "*.pdf" } } },
+        });
+        var path = file?.Path.LocalPath;
+        if (!string.IsNullOrWhiteSpace(path)) await ViewModel.ExportPortablePdfAsync(path);
         e.Handled = true;
     }
 

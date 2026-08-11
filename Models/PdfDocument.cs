@@ -29,6 +29,7 @@ public sealed class PdfDocument : INotifyPropertyChanged
 
     public DateTime CreatedAtUtc { get; set; }
     public DateTime LastOpenedAtUtc { get; set; }
+    public bool IsArchived { get; set; }
 
     [NotMapped]
     public bool IsMissing

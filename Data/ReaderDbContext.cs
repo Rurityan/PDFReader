@@ -21,6 +21,7 @@ public sealed class ReaderDbContext : DbContext
             entity.HasKey(document => document.Id);
             entity.Property(document => document.FilePath).IsRequired();
             entity.Property(document => document.Title).IsRequired();
+            entity.Property(document => document.IsArchived).HasDefaultValue(false);
             entity.HasIndex(document => document.FilePath).IsUnique();
         });
 

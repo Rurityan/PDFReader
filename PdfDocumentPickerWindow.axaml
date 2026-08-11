@@ -4,8 +4,8 @@
         x:Class="PDFReader.PdfDocumentPickerWindow"
         x:CompileBindings="False"
         Title="选择 PDF 文件"
-        Width="760"
-        Height="560"
+        Width="920"
+        Height="700"
         MinWidth="620"
         MinHeight="420"
         WindowStartupLocation="CenterOwner">
@@ -17,53 +17,56 @@
                        FontSize="12" />
         </StackPanel>
 
-        <ListBox x:Name="DocumentList"
-                 Grid.Row="1"
-                 ItemsSource="{Binding}"
-                 SelectionMode="Multiple"
-                 Margin="0,16,0,16">
-            <ListBox.ItemTemplate>
-                <DataTemplate x:DataType="model:PdfDocument">
-                    <StackPanel Spacing="2" Margin="4,5">
-                        <TextBlock Text="{Binding FilePath}"
-                                   TextWrapping="Wrap"
-                                   Foreground="#37414A"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding PathStatus}"
-                                   IsVisible="{Binding IsMissing}"
-                                   Foreground="#C2410C"
-                                   FontSize="11" />
-                    </StackPanel>
-                </DataTemplate>
-            </ListBox.ItemTemplate>
-        </ListBox>
+        <Grid x:Name="DocumentPanels" Grid.Row="1" RowDefinitions="*,Auto,*" RowSpacing="8" Margin="0,16">
+            <Grid RowDefinitions="Auto,*">
+                <ToggleButton x:Name="ActiveExpander" IsChecked="True" Height="42" HorizontalContentAlignment="Left" Click="PaneExpandedChanged">
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="正在使用" FontWeight="SemiBold" VerticalAlignment="Center" /><TextBlock Grid.Column="1" Text="⌃" FontSize="20" VerticalAlignment="Center" /></Grid>
+                </ToggleButton>
+                <ListBox x:Name="DocumentList" Grid.Row="1" ItemsSource="{Binding ActiveDocuments}" SelectionMode="Multiple" SelectionChanged="ActiveSelectionChanged" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate><DataTemplate x:DataType="model:PdfDocument"><StackPanel Spacing="2" Margin="4,5"><TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" Foreground="#37414A" FontSize="12" /><TextBlock Text="{Binding PathStatus}" IsVisible="{Binding IsMissing}" Foreground="#C2410C" FontSize="11" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+            <Border Grid.Row="1" Height="1" Background="#D9DDE2" />
+            <Grid Grid.Row="2" RowDefinitions="Auto,*">
+                <ToggleButton x:Name="ArchivedExpander" IsChecked="True" Height="42" HorizontalContentAlignment="Left" Click="PaneExpandedChanged">
+                    <Grid ColumnDefinitions="*,Auto"><TextBlock Text="已归档" FontWeight="SemiBold" VerticalAlignment="Center" /><TextBlock Grid.Column="1" Text="⌃" FontSize="20" VerticalAlignment="Center" /></Grid>
+                </ToggleButton>
+                <ListBox x:Name="ArchivedDocumentList" Grid.Row="1" ItemsSource="{Binding ArchivedDocuments}" SelectionMode="Multiple" SelectionChanged="ArchivedSelectionChanged" ScrollViewer.VerticalScrollBarVisibility="Auto">
+                    <ListBox.ItemTemplate><DataTemplate x:DataType="model:PdfDocument"><StackPanel Spacing="2" Margin="4,5"><TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" Foreground="#66717C" FontSize="12" /><TextBlock Text="{Binding PathStatus}" IsVisible="{Binding IsMissing}" Foreground="#C2410C" FontSize="11" /></StackPanel></DataTemplate></ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Grid>
 
         <Border Grid.Row="2"
                 Background="#FFFFFF"
                 BorderBrush="#D9DDE2"
                 BorderThickness="0,1,0,0"
                 Padding="0,14,0,0">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
                 <Button Content="新 PDF"
                         Click="AddNewPdfClick"
                         Padding="14,8"
                         Background="#2B6CB0"
                         Foreground="White" />
-                <TextBlock Grid.Column="1"
+                <Button x:Name="ArchiveButton" Grid.Column="1" Content="归档" Click="ArchiveClick" Padding="12,8" IsEnabled="False" />
+                <Button x:Name="RestoreButton" Grid.Column="2" Content="恢复" Click="RestoreClick" Padding="12,8" IsEnabled="False" />
+                <Button x:Name="RemoveButton" Grid.Column="3" Content="彻底移除" Click="RemoveClick" Padding="12,8" Foreground="#B42318" IsEnabled="False" />
+                <TextBlock Grid.Column="4"
                            Text="可多选 PDF 文件记录"
                            VerticalAlignment="Center"
                            Foreground="#737E88"
                            FontSize="12" />
-                <Button Grid.Column="2"
+                <Button Grid.Column="5"
                         Content="取消"
                         Click="CancelClick"
                         Padding="16,8" />
-                <Button Grid.Column="3"
+                <Button x:Name="ImportButton" Grid.Column="6"
                         Content="导入到工作区"
                         Click="ImportClick"
                         Padding="16,8"
                         Background="#2B6CB0"
-                        Foreground="White" />
+                        Foreground="White"
+                        IsEnabled="False" />
             </Grid>
         </Border>
     </Grid>

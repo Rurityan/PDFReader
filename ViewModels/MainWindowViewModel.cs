@@ -38,6 +38,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private double _zoom = 1.25;
     private PagePreview? _selectedPagePreview;
     private readonly List<PdfAnnotationChange> _pendingAnnotationChanges = new();
+    private bool _isSynchronizingTextFontSize;
+
+    [ObservableProperty]
+    private decimal _annotationTextFontSize = 11;
 
     [ObservableProperty]
     private string _documentTitle = "未打开文档";
@@ -118,6 +122,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string? _pendingCapturePath;
 
     [ObservableProperty]
+    private bool _enablePagePreviews = true;
+
+    [ObservableProperty]
     private bool _enableOcrCaptureCache;
 
     [ObservableProperty]
@@ -168,6 +175,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<PdfAnnotationInfo> CurrentPageAnnotations { get; } = new();
     public ObservableCollection<PagePreview> PagePreviews { get; } = new();
     public ObservableCollection<PdfDocument> AvailableDocuments { get; } = new();
+    public ObservableCollection<PdfDocument> ArchivedDocuments { get; } = new();
     public ObservableCollection<Bookmark> Bookmarks { get; } = new();
     public ObservableCollection<PdfDocument> Documents { get; } = new();
 
@@ -185,6 +193,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ocrRepository = new OcrResultRepository();
         _bookmarkRepository = new BookmarkRepository();
         DeleteResources(_ocrRepository.RemoveUnattachedRecords());
+        EnablePagePreviews = settings.EnablePagePreviews;
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
         AudioDirectory = settings.AudioDirectory;
@@ -200,12 +209,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             AvailableDocuments.Clear();
+            ArchivedDocuments.Clear();
             Documents.Clear();
             var documents = await _documentRepository.GetAllAsync();
             foreach (var document in documents)
             {
                 document.RefreshPathStatus();
-                AvailableDocuments.Add(document);
+                (document.IsArchived ? ArchivedDocuments : AvailableDocuments).Add(document);
             }
 
             StatusMessage = documents.Count == 0
@@ -285,6 +295,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 && CurrentPageOcrRecords.Any(record => record.HasAudio)));
     public bool CanUndoBookmarkDelete => _deletedBookmarkHistory.Count > 0 && !IsBusy;
     public bool CanUndoAnnotationDelete => _deletedAnnotationHistory.Count > 0 && !IsBusy;
+    public bool HasSelectedPdfAnnotation => SelectedPdfAnnotation is not null;
+    public bool HasSelectedFreeTextAnnotation => SelectedPdfAnnotation?.Type == PdfAnnotationType.Text;
+    public string SelectedAnnotationColor => SelectedPdfAnnotation?.StrokeColor ?? "-";
+    public string SelectedAnnotationStrokeWidth => SelectedPdfAnnotation is null
+        ? "-"
+        : $"{SelectedPdfAnnotation.StrokeWidth:0.##} pt";
     public bool HasPendingAnnotationChanges => _pendingAnnotationChanges.Count > 0;
     public bool CanSaveAnnotations => HasDocument && HasPendingAnnotationChanges && !IsBusy;
     public int CurrentPageNumber => _currentPage + 1;
@@ -318,6 +334,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void ShowPagePreviewPane()
     {
+        if (!EnablePagePreviews)
+        {
+            return;
+        }
+
         IsPagePreviewPaneVisible = true;
     }
 
@@ -649,7 +670,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             Type = annotation.Type, Title = title, Contents = contents, X = annotation.X, Y = annotation.Y,
             Width = annotation.Width, Height = annotation.Height, StartX = annotation.StartX, StartY = annotation.StartY,
             EndX = annotation.EndX, EndY = annotation.EndY, Points = annotation.Points,
-            StrokeColor = annotation.StrokeColor, StrokeWidth = annotation.StrokeWidth,
+            StrokeColor = annotation.StrokeColor, StrokeWidth = annotation.StrokeWidth, FontSize = annotation.FontSize,
         };
         QueueAnnotationUpdate(updated);
         SelectedPdfAnnotation = updated;
@@ -657,6 +678,46 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         StatusMessage = "文本框修改已暂存，请保存标注写入 PDF";
         NotifyAnnotationSaveChanged();
         return Task.CompletedTask;
+    }
+
+    public void ResizeTextAnnotation(PdfAnnotationInfo annotation, string handle, double deltaX, double deltaY)
+    {
+        var left = annotation.X;
+        var top = annotation.Y;
+        var right = annotation.X + annotation.Width;
+        var bottom = annotation.Y + annotation.Height;
+        if (handle.Contains('L')) left += deltaX;
+        if (handle.Contains('R')) right += deltaX;
+        if (handle.Contains('T')) top += deltaY;
+        if (handle.Contains('B')) bottom += deltaY;
+        if (right - left < 24) { if (handle.Contains('L')) left = right - 24; else right = left + 24; }
+        if (bottom - top < 20) { if (handle.Contains('T')) top = bottom - 20; else bottom = top + 20; }
+        var updated = new PdfAnnotationInfo
+        {
+            Id = annotation.Id, Subtype = annotation.Subtype, PageNumber = annotation.PageNumber, Type = annotation.Type,
+            Title = annotation.Title, Contents = annotation.Contents, X = left, Y = top, Width = right - left, Height = bottom - top,
+            StartX = annotation.StartX, StartY = annotation.StartY, EndX = annotation.EndX, EndY = annotation.EndY,
+            Points = annotation.Points, StrokeColor = annotation.StrokeColor, StrokeWidth = annotation.StrokeWidth, FontSize = annotation.FontSize,
+        };
+        QueueAnnotationUpdate(updated);
+        SelectedPdfAnnotation = updated;
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "文本框范围修改已暂存，请保存标注写入 PDF";
+        NotifyAnnotationSaveChanged();
+    }
+
+    public void ResizeLineAnnotation(PdfAnnotationInfo annotation, string handle, double deltaX, double deltaY)
+    {
+        var startX = annotation.StartX + (handle == "P1" ? deltaX : 0);
+        var startY = annotation.StartY + (handle == "P1" ? deltaY : 0);
+        var endX = annotation.EndX + (handle == "P2" ? deltaX : 0);
+        var endY = annotation.EndY + (handle == "P2" ? deltaY : 0);
+        var updated = new PdfAnnotationInfo { Id = annotation.Id, Subtype = annotation.Subtype, PageNumber = annotation.PageNumber, Type = annotation.Type, Title = annotation.Title, Contents = annotation.Contents, X = Math.Min(startX, endX), Y = Math.Min(startY, endY), Width = Math.Abs(endX - startX), Height = Math.Abs(endY - startY), StartX = startX, StartY = startY, EndX = endX, EndY = endY, Points = annotation.Points, StrokeColor = annotation.StrokeColor, StrokeWidth = annotation.StrokeWidth, FontSize = annotation.FontSize };
+        QueueAnnotationUpdate(updated);
+        SelectedPdfAnnotation = updated;
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "直线位置修改已暂存，请保存标注写入 PDF";
+        NotifyAnnotationSaveChanged();
     }
 
     private void ApplySelectedAnnotationStyle()
@@ -674,6 +735,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             X = annotation.X, Y = annotation.Y, Width = annotation.Width, Height = annotation.Height,
             StartX = annotation.StartX, StartY = annotation.StartY, EndX = annotation.EndX, EndY = annotation.EndY,
             Points = annotation.Points, StrokeColor = AnnotationColorHex, StrokeWidth = (double)AnnotationStrokeWidth,
+            FontSize = annotation.Type == PdfAnnotationType.Text ? (double)AnnotationTextFontSize : annotation.FontSize,
         };
         QueueAnnotationUpdate(updated);
         SelectedPdfAnnotation = updated;
@@ -701,6 +763,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public void SelectPdfAnnotation(PdfAnnotationInfo annotation)
     {
         SelectedPdfAnnotation = annotation;
+        if (annotation.Type == PdfAnnotationType.Text)
+        {
+            _isSynchronizingTextFontSize = true;
+            AnnotationTextFontSize = (decimal)annotation.FontSize;
+            _isSynchronizingTextFontSize = false;
+        }
         StatusMessage = string.IsNullOrWhiteSpace(annotation.Subtype)
             ? "已选中 PDF 标注，按 Delete 删除"
             : $"已选中 PDF 标注: {annotation.Subtype}，按 Delete 删除";
@@ -922,6 +990,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(CanUndoAnnotationDelete));
             _annotationCache.Remove(_documentId);
             await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            RefreshPagePreviewCacheMetadata();
             StatusMessage = "标注已保存到 PDF";
         }
         catch (Exception exception)
@@ -987,6 +1056,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             CloseRenderedDocument();
             await Task.Run(() => _pdfEditingService.SaveCopy(documentPath, documentPath));
             await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            RefreshPagePreviewCacheMetadata();
             StatusMessage = "PDF 已保存";
         }
         catch (Exception exception)
@@ -1042,6 +1112,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             await ReopenRenderedDocumentAsync(destinationPath, pageIndex);
+            RefreshPagePreviewCacheMetadata();
             StatusMessage = "PDF 已另存为并切换到新文件";
         }
         catch (Exception exception)
@@ -1060,6 +1131,31 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             IsBusy = false;
             NotifyNavigationChanged();
+        }
+    }
+
+    public async Task ExportPortablePdfAsync(string outputPath)
+    {
+        if (!HasDocument || IsBusy || HasPendingAnnotationChanges || string.IsNullOrWhiteSpace(outputPath))
+        {
+            StatusMessage = HasPendingAnnotationChanges ? "请先保存或放弃缓存中的标注变更" : StatusMessage;
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在导出包含书签和音频的 PDF...";
+            await _annotationService.ExportWithMetadataAsync(DocumentPath, outputPath, Bookmarks.ToList(), OcrHistory.ToList());
+            StatusMessage = "已导出可携带书签、音频附件和 OCR 元数据的 PDF";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"导出 PDF 失败: {exception.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
         }
     }
 
@@ -1244,7 +1340,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             }
 
             var normalizedPath = Path.GetFullPath(filePath);
-            if (AvailableDocuments.Any(document =>
+            if (AvailableDocuments.Concat(ArchivedDocuments).Any(document =>
                     string.Equals(document.FilePath, normalizedPath, StringComparison.OrdinalIgnoreCase)))
             {
                 duplicateCount++;
@@ -1372,6 +1468,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             DeleteResources(await _documentRepository.DeleteAsync(document.Id));
             Documents.Remove(document);
             AvailableDocuments.Remove(document);
+            ArchivedDocuments.Remove(document);
             if (ReferenceEquals(SelectedDocument, document))
             {
                 SelectedDocument = null;
@@ -1382,6 +1479,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception exception)
         {
             StatusMessage = $"删除 PDF 对象失败: {exception.Message}";
+        }
+    }
+
+    public async Task SetDocumentArchivedAsync(PdfDocument document, bool archived)
+    {
+        if (IsBusy || document.IsArchived == archived) return;
+        try
+        {
+            await _documentRepository.SetArchivedAsync(document.Id, archived);
+            document.IsArchived = archived;
+            AvailableDocuments.Remove(document);
+            ArchivedDocuments.Remove(document);
+            (archived ? ArchivedDocuments : AvailableDocuments).Insert(0, document);
+            StatusMessage = archived ? "PDF 已归档" : "PDF 已恢复到正在使用";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"更新归档状态失败: {exception.Message}";
         }
     }
 
@@ -1452,11 +1567,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private PdfDocument AddOrUpdateAvailableDocument(PdfDocument document)
     {
-        var existing = AvailableDocuments.SingleOrDefault(item => item.Id == document.Id);
+        var existing = AvailableDocuments.Concat(ArchivedDocuments).SingleOrDefault(item => item.Id == document.Id);
         if (existing is null)
         {
             document.RefreshPathStatus();
-            AvailableDocuments.Insert(0, document);
+            (document.IsArchived ? ArchivedDocuments : AvailableDocuments).Insert(0, document);
             return document;
         }
 
@@ -1491,6 +1606,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         var bookmarks = await _bookmarkRepository.GetForDocumentAsync(_documentId);
+        if (bookmarks.Count == 0)
+        {
+            var restored = await RestorePdfReaderMetadataAsync();
+            if (!restored)
+            {
+                await ImportPdfOutlineAsync();
+            }
+            bookmarks = await _bookmarkRepository.GetForDocumentAsync(_documentId);
+            if (restored)
+            {
+                ocrRecords = await _ocrRepository.GetForDocumentAsync(_documentId);
+                OcrHistory.Clear();
+                foreach (var record in ocrRecords)
+                {
+                    record.RefreshAudioStatus();
+                    OcrHistory.Add(record);
+                }
+            }
+        }
         var bookmarkMap = bookmarks.ToDictionary(bookmark => bookmark.Id);
         foreach (var bookmark in bookmarks)
         {
@@ -1513,6 +1647,97 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         RefreshBookmarkDisplayTree();
         RefreshCurrentPageOcr();
+    }
+
+    private async Task<bool> RestorePdfReaderMetadataAsync()
+    {
+        try
+        {
+            var metadata = await _annotationService.RestoreMetadataAsync(DocumentPath, AudioDirectory);
+            if (metadata is null || (metadata.Bookmarks.Count == 0 && metadata.OcrRecords.Count == 0)) return false;
+
+            var now = DateTime.UtcNow;
+            var bookmarkIds = new HashSet<Guid>(metadata.Bookmarks.Select(bookmark => bookmark.Id));
+            foreach (var item in metadata.Bookmarks)
+            {
+                var bookmark = new Bookmark
+                {
+                    Id = item.Id == Guid.Empty ? Guid.NewGuid() : item.Id,
+                    PdfDocumentId = _documentId,
+                    ParentId = item.ParentId is Guid parentId && bookmarkIds.Contains(parentId) ? parentId : null,
+                    PageNumber = Math.Max(1, item.Page), Title = item.Title, SortOrder = item.SortOrder,
+                    CreatedAtUtc = now, UpdatedAtUtc = now,
+                };
+                await _bookmarkRepository.SaveAsync(bookmark);
+            }
+            foreach (var item in metadata.OcrRecords)
+            {
+                var record = new OcrRecord
+                {
+                    Id = item.Id == Guid.Empty ? Guid.NewGuid() : item.Id, PdfDocumentId = _documentId,
+                    BookmarkId = item.BookmarkId is Guid bookmarkId && bookmarkIds.Contains(bookmarkId) ? bookmarkId : null,
+                    PageNumber = Math.Max(1, item.PageNumber), X = item.X, Y = item.Y, Width = item.Width, Height = item.Height,
+                    CaptureZoom = item.CaptureZoom > 0 ? item.CaptureZoom : 1, Title = item.Title, Text = item.Text,
+                    CreatedAtUtc = item.CreatedAtUtc == default ? now : item.CreatedAtUtc,
+                };
+                await _ocrRepository.AddAsync(record);
+                foreach (var audio in item.AudioFiles.Where(audio => File.Exists(audio.FilePath)))
+                {
+                    await _ocrRepository.AddAudioAsync(new TtsAudioRecord
+                    {
+                        Id = audio.Id == Guid.Empty ? Guid.NewGuid() : audio.Id, OcrRecordId = record.Id,
+                        FilePath = audio.FilePath, CreatedAtUtc = audio.CreatedAtUtc == default ? now : audio.CreatedAtUtc,
+                    });
+                }
+            }
+            StatusMessage = "已恢复 PDFReader 书签、OCR 记录和音频附件";
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task ImportPdfOutlineAsync()
+    {
+        try
+        {
+            var outline = await _annotationService.GetOutlineAsync(DocumentPath);
+            if (outline.Count == 0) return;
+
+            var parents = new Dictionary<int, Bookmark>();
+            var sortOrders = new Dictionary<string, int>();
+            foreach (var entry in outline)
+            {
+                var level = Math.Max(1, entry.Level);
+                while (level > 1 && !parents.ContainsKey(level - 1)) level--;
+                foreach (var key in parents.Keys.Where(key => key >= level).ToList()) parents.Remove(key);
+                var parent = level > 1 && parents.TryGetValue(level - 1, out var candidate) ? candidate : null;
+                var parentId = parent?.Id;
+                var sortKey = parentId?.ToString("N") ?? "root";
+                sortOrders.TryGetValue(sortKey, out var sortOrder);
+                var now = DateTime.UtcNow;
+                var bookmark = new Bookmark
+                {
+                    PdfDocumentId = _documentId,
+                    ParentId = parentId,
+                    Parent = parent,
+                    PageNumber = Math.Max(1, entry.PageNumber),
+                    Title = string.IsNullOrWhiteSpace(entry.Title) ? "未命名书签" : entry.Title.Trim(),
+                    SortOrder = sortOrder,
+                    CreatedAtUtc = now,
+                    UpdatedAtUtc = now,
+                };
+                await _bookmarkRepository.SaveAsync(bookmark);
+                sortOrders[sortKey] = sortOrder + 1;
+                parents[level] = bookmark;
+            }
+        }
+        catch
+        {
+            // An unreadable or unsupported Outline must not prevent the PDF itself from opening.
+        }
     }
 
     private void RefreshBookmarkDisplayTree()
@@ -2198,6 +2423,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settingsService.Save(_settings);
 
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
+        var pagePreviewsWereEnabled = EnablePagePreviews;
+        EnablePagePreviews = settings.EnablePagePreviews;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
         AudioDirectory = settings.AudioDirectory;
         TtsBaseUrl = settings.TtsBaseUrl;
@@ -2211,6 +2438,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (HasDocument)
         {
             await LoadDocumentDataAsync();
+            if (!EnablePagePreviews)
+            {
+                IsPagePreviewPaneVisible = false;
+                ClearPagePreviews();
+            }
+            else if (!pagePreviewsWereEnabled)
+            {
+                await LoadPagePreviewsAsync();
+            }
         }
 
         StatusMessage = "设置已保存";
@@ -2349,6 +2585,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         return new ReaderSettings
         {
+            EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             OcrCaptureDirectory = OcrCaptureDirectory,
             AudioDirectory = AudioDirectory,
@@ -2532,7 +2769,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private async Task LoadPagePreviewsAsync()
     {
         ClearPagePreviews();
-        if (!HasDocument || _pdfService.PageCount == 0)
+        if (!EnablePagePreviews || !HasDocument || _pdfService.PageCount == 0)
         {
             return;
         }
@@ -2579,6 +2816,35 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             fileInfo.LastWriteTimeUtc.Ticks,
             _pdfService.PageCount,
             previewZoom);
+    }
+
+    // Annotation overlays are rendered separately from the cached page bitmaps.
+    // A known PDF write should therefore retain the thumbnails and only update their source stamp.
+    private void RefreshPagePreviewCacheMetadata()
+    {
+        if (!HasDocument || _documentId == Guid.Empty)
+        {
+            return;
+        }
+
+        var cacheDirectory = ReaderSettings.GetPagePreviewCacheDirectory(_documentId);
+        if (!Directory.Exists(cacheDirectory))
+        {
+            return;
+        }
+
+        try
+        {
+            const double previewZoom = 0.30;
+            var metadataPath = Path.Combine(cacheDirectory, "metadata.json");
+            File.WriteAllText(metadataPath, JsonSerializer.Serialize(CreatePagePreviewCacheMetadata(previewZoom)));
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
     }
 
     private static bool IsPagePreviewCacheValid(string metadataPath, PagePreviewCacheMetadata expected)
@@ -2740,6 +3006,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ApplySelectedAnnotationStyle();
     }
 
+    partial void OnAnnotationTextFontSizeChanged(decimal value)
+    {
+        if (!_isSynchronizingTextFontSize && HasSelectedFreeTextAnnotation)
+        {
+            ApplySelectedAnnotationStyle();
+        }
+    }
+
     partial void OnIsReadingCurrentPageChanged(bool value)
     {
         OnPropertyChanged(nameof(ReadCurrentPageButtonText));
@@ -2764,6 +3038,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectedTreeItem = value;
         }
         NotifyBookmarkChanged();
+    }
+
+    partial void OnSelectedPdfAnnotationChanged(PdfAnnotationInfo? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedPdfAnnotation));
+        OnPropertyChanged(nameof(HasSelectedFreeTextAnnotation));
+        OnPropertyChanged(nameof(SelectedAnnotationColor));
+        OnPropertyChanged(nameof(SelectedAnnotationStrokeWidth));
     }
 
     partial void OnSelectedTreeItemChanged(object? value)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -34,6 +35,22 @@ public sealed class PdfAnnotationService
         }
     }
 
+    public async Task<IReadOnlyList<PdfOutlineEntry>> GetOutlineAsync(string path)
+    {
+        var resultPath = Path.Combine(Path.GetTempPath(), $"pdfreader-outline-{Guid.NewGuid():N}.json");
+        try
+        {
+            await RunAsync("outline", path, resultPath);
+            await using var stream = File.OpenRead(resultPath);
+            return await JsonSerializer.DeserializeAsync<List<PdfOutlineEntry>>(stream, JsonOptions)
+                ?? new List<PdfOutlineEntry>();
+        }
+        finally
+        {
+            TryDelete(resultPath);
+        }
+    }
+
     public async Task SaveIncrementalAsync(string path, IReadOnlyList<PdfAnnotationChange> changes)
     {
         var requestPath = Path.Combine(Path.GetTempPath(), $"pdfreader-annotation-changes-{Guid.NewGuid():N}.json");
@@ -45,6 +62,62 @@ public sealed class PdfAnnotationService
         finally
         {
             TryDelete(requestPath);
+        }
+    }
+
+    public async Task ExportWithMetadataAsync(string sourcePath, string outputPath, IReadOnlyList<Bookmark> bookmarks, IReadOnlyList<OcrRecord> ocrRecords)
+    {
+        var manifestPath = Path.Combine(Path.GetTempPath(), $"pdfreader-export-{Guid.NewGuid():N}.json");
+        try
+        {
+            var outline = new List<Dictionary<string, object?>>();
+            AddOutlineEntries(bookmarks.Where(bookmark => bookmark.ParentId is null), 1, outline);
+            var manifest = new
+            {
+                format = "PDFReader portable metadata v1",
+                bookmarks = outline,
+                ocrRecords = ocrRecords.Select(record => new
+                {
+                    id = record.Id, bookmarkId = record.BookmarkId, record.PageNumber, record.X, record.Y,
+                    record.Width, record.Height, record.CaptureZoom, record.Title, record.Text, record.CreatedAtUtc,
+                    audioFiles = record.TtsAudios.Where(audio => File.Exists(audio.FilePath)).Select(audio => new { audio.Id, audio.FilePath, audio.CreatedAtUtc }),
+                }),
+            };
+            await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
+            await RunAsync("export", sourcePath, outputPath, manifestPath);
+        }
+        finally
+        {
+            TryDelete(manifestPath);
+        }
+    }
+
+    public async Task<PdfReaderMetadata?> RestoreMetadataAsync(string path, string audioDirectory)
+    {
+        var resultPath = Path.Combine(Path.GetTempPath(), $"pdfreader-restore-{Guid.NewGuid():N}.json");
+        try
+        {
+            await RunAsync("restore", path, audioDirectory, resultPath);
+            if (!File.Exists(resultPath)) return null;
+            await using var stream = File.OpenRead(resultPath);
+            return await JsonSerializer.DeserializeAsync<PdfReaderMetadata>(stream, JsonOptions);
+        }
+        finally
+        {
+            TryDelete(resultPath);
+        }
+    }
+
+    private static void AddOutlineEntries(IEnumerable<Bookmark> bookmarks, int level, List<Dictionary<string, object?>> output)
+    {
+        foreach (var bookmark in bookmarks.OrderBy(bookmark => bookmark.SortOrder).ThenBy(bookmark => bookmark.CreatedAtUtc))
+        {
+            output.Add(new Dictionary<string, object?>
+            {
+                ["level"] = level, ["id"] = bookmark.Id, ["parentId"] = bookmark.ParentId,
+                ["title"] = bookmark.Title, ["page"] = bookmark.PageNumber, ["sortOrder"] = bookmark.SortOrder,
+            });
+            AddOutlineEntries(bookmark.Children, level + 1, output);
         }
     }
 

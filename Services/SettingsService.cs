@@ -63,6 +63,7 @@ public sealed class SettingsService
         settings = Normalize(settings);
         var persistedSettings = new ReaderSettings
         {
+            EnablePagePreviews = settings.EnablePagePreviews,
             EnableOcrCaptureCache = settings.EnableOcrCaptureCache,
             OcrCaptureDirectory = settings.OcrCaptureDirectory,
             AudioDirectory = settings.AudioDirectory,

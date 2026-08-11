@@ -16,6 +16,7 @@
                 <TextBlock Text="资源路径" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
                 <TextBlock Text="数据库与配置文件（固定位置）" FontSize="12" Foreground="#737E88" />
                 <TextBlock Text="程序目录/user_data/reader.db 和 settings.json" TextWrapping="Wrap" Foreground="#4A5560" />
+                <CheckBox Content="开启页面缩略图" IsChecked="{Binding EnablePagePreviews}" />
                 <TextBlock Text="语音文件目录" FontSize="12" Foreground="#737E88" />
                 <TextBox Text="{Binding AudioDirectory}" />
                 <TextBlock Text="OCR 截图文件目录" FontSize="12" Foreground="#737E88" />

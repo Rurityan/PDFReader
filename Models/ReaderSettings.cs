@@ -6,6 +6,7 @@ namespace PDFReader.Models;
 
 public sealed class ReaderSettings
 {
+    public bool EnablePagePreviews { get; set; } = true;
     public bool EnableOcrCaptureCache { get; set; }
     public string OcrCaptureDirectory { get; set; } = GetDefaultCaptureDirectory();
     public string AudioDirectory { get; set; } = GetDefaultAudioDirectory();
