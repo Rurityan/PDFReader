@@ -93,7 +93,9 @@ public sealed class PdfEditingService
         double endX,
         double endY,
         double zoom,
-        string? annotationId = null)
+        string? annotationId = null,
+        string colorHex = "#2B6CB0",
+        double strokeWidth = 2)
     {
         var pageBounds = GetPageBounds(sourcePath, pageIndex);
         var scale = zoom > 0 ? zoom : 1.0;
@@ -115,9 +117,8 @@ public sealed class PdfEditingService
                 annotation.Elements.SetObject("/L", CreateArray(document,
                     new PdfReal(x1), new PdfReal(pageBounds.Height - y1),
                     new PdfReal(x2), new PdfReal(pageBounds.Height - y2)));
-                annotation.Elements.SetObject("/C", CreateArray(document,
-                    new PdfReal(0.17), new PdfReal(0.42), new PdfReal(0.69)));
-                annotation.Elements.SetObject("/BS", CreateDictionary(document, ("/W", new PdfReal(2))));
+                annotation.Elements.SetObject("/C", CreateColorArray(document, colorHex));
+                annotation.Elements.SetObject("/BS", CreateDictionary(document, ("/W", new PdfReal(Math.Max(0.1, strokeWidth)))));
             });
     }
 
@@ -165,7 +166,9 @@ public sealed class PdfEditingService
         double width,
         double height,
         double zoom,
-        string? annotationId = null)
+        string? annotationId = null,
+        string colorHex = "#2B6CB0",
+        double strokeWidth = 2)
     {
         var pageBounds = GetPageBounds(sourcePath, pageIndex);
         var scale = zoom > 0 ? zoom : 1.0;
@@ -180,9 +183,8 @@ public sealed class PdfEditingService
             (annotation, document) =>
             {
                 annotation.Elements.SetString("/NM", annotationId ?? Guid.NewGuid().ToString("N"));
-                annotation.Elements.SetObject("/C", CreateArray(document,
-                    new PdfReal(0.17), new PdfReal(0.42), new PdfReal(0.69)));
-                annotation.Elements.SetObject("/BS", CreateDictionary(document, ("/W", new PdfReal(2))));
+                annotation.Elements.SetObject("/C", CreateColorArray(document, colorHex));
+                annotation.Elements.SetObject("/BS", CreateDictionary(document, ("/W", new PdfReal(Math.Max(0.1, strokeWidth)))));
             });
     }
 
@@ -192,7 +194,9 @@ public sealed class PdfEditingService
         int pageIndex,
         IReadOnlyList<PdfAnnotationPoint> points,
         double zoom,
-        string? annotationId = null)
+        string? annotationId = null,
+        string colorHex = "#2B6CB0",
+        double strokeWidth = 2)
     {
         if (points.Count < 2)
         {
@@ -217,9 +221,8 @@ public sealed class PdfEditingService
             (annotation, document) =>
             {
                 annotation.Elements.SetString("/NM", annotationId ?? Guid.NewGuid().ToString("N"));
-                annotation.Elements.SetObject("/C", CreateArray(document,
-                    new PdfReal(0.17), new PdfReal(0.42), new PdfReal(0.69)));
-                annotation.Elements.SetObject("/BS", CreateDictionary(document, ("/W", new PdfReal(2))));
+                annotation.Elements.SetObject("/C", CreateColorArray(document, colorHex));
+                annotation.Elements.SetObject("/BS", CreateDictionary(document, ("/W", new PdfReal(Math.Max(0.1, strokeWidth)))));
                 var stroke = CreateArray(document, pdfPoints.SelectMany(point => new PdfItem[]
                 {
                     new PdfReal(point.X),
@@ -300,6 +303,10 @@ public sealed class PdfEditingService
                 }
             }
 
+            var strokeColor = ReadColorHex(annotation.Elements.GetArray("/C"));
+            var borderStyle = annotation.Elements.GetDictionary("/BS");
+            var strokeWidth = borderStyle?.Elements.GetReal("/W") ?? 2;
+
             result.Add(new PdfAnnotationInfo
             {
                 Id = id,
@@ -316,6 +323,8 @@ public sealed class PdfEditingService
                 EndX = endX,
                 EndY = endY,
                 Points = points,
+                StrokeColor = strokeColor,
+                StrokeWidth = strokeWidth > 0 ? strokeWidth : 2,
             });
         }
 
@@ -438,6 +447,41 @@ public sealed class PdfEditingService
     }
 
     private static PdfArray CreateArray(PdfSharpDocument document, params PdfItem[] items) => new(document, items);
+
+    private static PdfArray CreateColorArray(PdfSharpDocument document, string colorHex)
+    {
+        var (red, green, blue) = ParseColor(colorHex);
+        return CreateArray(document, new PdfReal(red), new PdfReal(green), new PdfReal(blue));
+    }
+
+    private static string ReadColorHex(PdfArray? color)
+    {
+        if (color is null || color.Elements.Count < 3)
+        {
+            return "#2B6CB0";
+        }
+
+        var red = (byte)Math.Clamp(Math.Round(color.Elements.GetReal(0) * 255), 0, 255);
+        var green = (byte)Math.Clamp(Math.Round(color.Elements.GetReal(1) * 255), 0, 255);
+        var blue = (byte)Math.Clamp(Math.Round(color.Elements.GetReal(2) * 255), 0, 255);
+        return $"#{red:X2}{green:X2}{blue:X2}";
+    }
+
+    private static (double Red, double Green, double Blue) ParseColor(string colorHex)
+    {
+        var value = colorHex.Trim().TrimStart('#');
+        if (value.Length == 3)
+        {
+            value = string.Concat(value.Select(character => new string(character, 2)));
+        }
+
+        if (value.Length != 6 || !uint.TryParse(value, System.Globalization.NumberStyles.HexNumber, null, out var rgb))
+        {
+            rgb = 0x2B6CB0;
+        }
+
+        return ((rgb >> 16 & 0xFF) / 255.0, (rgb >> 8 & 0xFF) / 255.0, (rgb & 0xFF) / 255.0);
+    }
 
     private static PdfDictionary CreateDictionary(PdfSharpDocument document, params (string Key, PdfItem Value)[] values)
     {

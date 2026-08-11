@@ -29,6 +29,8 @@ public sealed class PdfAnnotationInfo
     public double EndX { get; init; }
     public double EndY { get; init; }
     public IReadOnlyList<PdfAnnotationPoint> Points { get; init; } = Array.Empty<PdfAnnotationPoint>();
+    public string StrokeColor { get; init; } = "#2B6CB0";
+    public double StrokeWidth { get; init; } = 2;
 }
 
 public sealed record PdfAnnotationPoint(double X, double Y);

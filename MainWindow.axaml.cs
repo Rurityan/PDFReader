@@ -161,6 +161,12 @@ public partial class MainWindow : Window
                 ClearAnnotationStrokePreview();
             }
         }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.AnnotationColor)
+            || e.PropertyName == nameof(MainWindowViewModel.AnnotationStrokeWidth))
+        {
+            RenderAnnotationStrokePreview();
+        }
     }
 
     private void CurrentPageOcrRecordsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -184,6 +190,7 @@ public partial class MainWindow : Window
         var scale = ViewModel.CurrentZoom;
         foreach (var annotation in ViewModel.CurrentPageAnnotations)
         {
+            var annotationBrush = new SolidColorBrush(Color.Parse(annotation.StrokeColor));
             var left = annotation.X * scale;
             var top = annotation.Y * scale;
             var width = Math.Max(1, annotation.Width * scale);
@@ -222,8 +229,8 @@ public partial class MainWindow : Window
                     {
                         StartPoint = new Point(points[pointIndex - 1].X * scale - left + 4, points[pointIndex - 1].Y * scale - top + 4),
                         EndPoint = new Point(points[pointIndex].X * scale - left + 4, points[pointIndex].Y * scale - top + 4),
-                        Stroke = new SolidColorBrush(Color.Parse("#446FAD")),
-                        StrokeThickness = 3,
+                        Stroke = annotationBrush,
+                        StrokeThickness = Math.Max(1, annotation.StrokeWidth * scale),
                     });
                 }
             }
@@ -233,8 +240,8 @@ public partial class MainWindow : Window
                 {
                     Width = width,
                     Height = height,
-                    BorderBrush = new SolidColorBrush(Color.Parse("#446FAD")),
-                    BorderThickness = new Thickness(2),
+                    BorderBrush = annotationBrush,
+                    BorderThickness = new Thickness(Math.Max(1, annotation.StrokeWidth * scale)),
                     Background = Brushes.Transparent,
                 });
             }
@@ -529,6 +536,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void AnnotationColorClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as Control)?.Tag is string colorHex
+            && Color.TryParse(colorHex, out var color))
+        {
+            ViewModel.SetAnnotationColor(color);
+            e.Handled = true;
+        }
+    }
+
+    private async void OpenAnnotationColorPickerClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var dialog = new AnnotationColorPickerWindow(ViewModel.AnnotationColor);
+        var color = await dialog.ShowDialog<Color?>(this);
+        if (color is Color selectedColor)
+        {
+            ViewModel.SetAnnotationColor(selectedColor);
+        }
+
+        e.Handled = true;
+    }
+
     private void UpdateAnnotationToolVisuals()
     {
         var selectedBrush = new SolidColorBrush(Color.Parse("#E6A23C"));
@@ -578,7 +607,7 @@ public partial class MainWindow : Window
 
         var strokeBrush = ViewModel.AnnotationTool == AnnotationTool.Eraser
             ? new SolidColorBrush(Color.Parse("#AA8B5A"))
-            : new SolidColorBrush(Color.Parse("#2B6CB0"));
+            : ViewModel.AnnotationColorBrush;
         for (var index = 1; index < _annotationStrokePoints.Count; index++)
         {
             AnnotationStrokePreview.Children.Add(new Line
@@ -586,7 +615,9 @@ public partial class MainWindow : Window
                 StartPoint = _annotationStrokePoints[index - 1],
                 EndPoint = _annotationStrokePoints[index],
                 Stroke = strokeBrush,
-                StrokeThickness = ViewModel.AnnotationTool == AnnotationTool.Eraser ? 10 : 3,
+                StrokeThickness = ViewModel.AnnotationTool == AnnotationTool.Eraser
+                    ? Math.Max(8, (double)ViewModel.AnnotationStrokeWidth * ViewModel.CurrentZoom * 2)
+                    : Math.Max(1, (double)ViewModel.AnnotationStrokeWidth * ViewModel.CurrentZoom),
                 Opacity = 0.7,
             });
         }

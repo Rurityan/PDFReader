@@ -5,6 +5,7 @@ using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -82,7 +83,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isReadingCurrentPage;
 
     [ObservableProperty]
-    private AnnotationTool _annotationTool = AnnotationTool.Text;
+    private AnnotationTool _annotationTool = AnnotationTool.Freehand;
+
+    [ObservableProperty]
+    private Color _annotationColor = Color.Parse("#2B6CB0");
+
+    [ObservableProperty]
+    private decimal _annotationStrokeWidth = 2;
 
     private bool _captureOnce;
 
@@ -258,6 +265,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ? "隐藏当前页 OCR"
         : "显示当前页 OCR";
     public string AnnotationButtonText => IsAnnotationMode ? "取消标注" : "标注";
+    public string AnnotationColorHex => $"#{AnnotationColor.R:X2}{AnnotationColor.G:X2}{AnnotationColor.B:X2}";
+    public SolidColorBrush AnnotationColorBrush => new(AnnotationColor);
+    public string AnnotationStrokeWidthText => $"{AnnotationStrokeWidth:0} pt";
     public string AnnotationToolText => AnnotationTool switch
     {
         AnnotationTool.Line => "画线",
@@ -300,7 +310,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             CancelCaptureMode();
             IsAnnotationMode = true;
-            AnnotationTool = AnnotationTool.Text;
+            AnnotationTool = AnnotationTool.Freehand;
             StatusMessage = "标注模式已开启，请框选要添加标注的区域";
         }
     }
@@ -321,6 +331,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             AnnotationTool.Freehand => "自由绘制已开启，可连续绘制",
             _ => $"已选择{AnnotationToolText}，请在页面上框选区域",
         };
+    }
+
+    public void SetAnnotationColor(Color color)
+    {
+        AnnotationColor = Color.FromRgb(color.R, color.G, color.B);
     }
 
     public void CancelAnnotationMode()
@@ -427,6 +442,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             Y = y / _zoom,
             Width = width / _zoom,
             Height = height / _zoom,
+            StrokeColor = AnnotationColorHex,
+            StrokeWidth = (double)AnnotationStrokeWidth,
         });
         return Task.CompletedTask;
     }
@@ -451,6 +468,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             StartY = startY / _zoom,
             EndX = endX / _zoom,
             EndY = endY / _zoom,
+            StrokeColor = AnnotationColorHex,
+            StrokeWidth = (double)AnnotationStrokeWidth,
         });
         return Task.CompletedTask;
     }
@@ -471,6 +490,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             Y = y / _zoom,
             Width = width / _zoom,
             Height = height / _zoom,
+            StrokeColor = AnnotationColorHex,
+            StrokeWidth = (double)AnnotationStrokeWidth,
         });
         return Task.CompletedTask;
     }
@@ -491,6 +512,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             Y = y / _zoom,
             Width = width / _zoom,
             Height = height / _zoom,
+            StrokeColor = AnnotationColorHex,
+            StrokeWidth = (double)AnnotationStrokeWidth,
         });
         return Task.CompletedTask;
     }
@@ -523,6 +546,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             EndX = pdfPoints[^1].X,
             EndY = pdfPoints[^1].Y,
             Points = pdfPoints,
+            StrokeColor = AnnotationColorHex,
+            StrokeWidth = (double)AnnotationStrokeWidth,
         });
         return Task.CompletedTask;
     }
@@ -760,7 +785,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                     annotation.EndX,
                                     annotation.EndY,
                                     1,
-                                    annotation.Id);
+                                    annotation.Id,
+                                    annotation.StrokeColor,
+                                    annotation.StrokeWidth);
                                 break;
                             case PdfAnnotationType.Highlight:
                                 _pdfEditingService.AddHighlightAnnotation(
@@ -784,7 +811,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                     annotation.Width,
                                     annotation.Height,
                                     1,
-                                    annotation.Id);
+                                    annotation.Id,
+                                    annotation.StrokeColor,
+                                    annotation.StrokeWidth);
                                 break;
                             case PdfAnnotationType.Freehand:
                                 _pdfEditingService.AddFreehandAnnotation(
@@ -793,7 +822,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                                     annotation.PageNumber - 1,
                                     annotation.Points,
                                     1,
-                                    annotation.Id);
+                                    annotation.Id,
+                                    annotation.StrokeColor,
+                                    annotation.StrokeWidth);
                                 break;
                         }
                     }
@@ -2222,6 +2253,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnAnnotationToolChanged(AnnotationTool value)
     {
         OnPropertyChanged(nameof(AnnotationToolText));
+    }
+
+    partial void OnAnnotationColorChanged(Color value)
+    {
+        OnPropertyChanged(nameof(AnnotationColorHex));
+        OnPropertyChanged(nameof(AnnotationColorBrush));
+    }
+
+    partial void OnAnnotationStrokeWidthChanged(decimal value)
+    {
+        OnPropertyChanged(nameof(AnnotationStrokeWidthText));
     }
 
     partial void OnIsReadingCurrentPageChanged(bool value)

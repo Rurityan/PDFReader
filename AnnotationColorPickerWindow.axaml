@@ -1,0 +1,34 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.AnnotationColorPickerWindow"
+        Title="拾色器"
+        Width="440"
+        Height="330"
+        MinWidth="400"
+        MinHeight="300"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*,Auto" Background="#F5F6F8" Margin="24" RowSpacing="12">
+        <TextBlock Text="自定义标注颜色" FontSize="18" FontWeight="SemiBold" Foreground="#303943" />
+        <Border Grid.Row="1" Height="42" Background="#2B6CB0" x:Name="ColorPreview" />
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto,Auto" RowSpacing="8" ColumnSpacing="10">
+            <TextBlock Text="R" Foreground="#C53030" VerticalAlignment="Center" />
+            <Slider x:Name="RedSlider" Grid.Column="1" Minimum="0" Maximum="255" ValueChanged="ChannelChanged" />
+            <TextBlock x:Name="RedValueText" Grid.Column="2" Width="34" TextAlignment="Right" />
+            <TextBlock Grid.Row="1" Text="G" Foreground="#2F855A" VerticalAlignment="Center" />
+            <Slider x:Name="GreenSlider" Grid.Row="1" Grid.Column="1" Minimum="0" Maximum="255" ValueChanged="ChannelChanged" />
+            <TextBlock x:Name="GreenValueText" Grid.Row="1" Grid.Column="2" Width="34" TextAlignment="Right" />
+            <TextBlock Grid.Row="2" Text="B" Foreground="#2B6CB0" VerticalAlignment="Center" />
+            <Slider x:Name="BlueSlider" Grid.Row="2" Grid.Column="1" Minimum="0" Maximum="255" ValueChanged="ChannelChanged" />
+            <TextBlock x:Name="BlueValueText" Grid.Row="2" Grid.Column="2" Width="34" TextAlignment="Right" />
+        </Grid>
+        <Grid Grid.Row="3" ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <TextBlock Text="HEX" Foreground="#4A5560" VerticalAlignment="Center" />
+            <TextBox x:Name="HexTextBox" Grid.Column="1" PlaceholderText="#RRGGBB" />
+        </Grid>
+        <TextBlock Grid.Row="4" x:Name="ValidationText" Foreground="#C53030" TextWrapping="Wrap" />
+        <StackPanel Grid.Row="5" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="取消" Click="CancelClick" Padding="14,8" />
+            <Button Content="使用此颜色" Click="ApplyClick" Padding="14,8" Background="#2B6CB0" Foreground="White" />
+        </StackPanel>
+    </Grid>
+</Window>
