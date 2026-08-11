@@ -395,6 +395,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public void SetAnnotationColor(Color color)
     {
         AnnotationColor = Color.FromRgb(color.R, color.G, color.B);
+        ApplySelectedAnnotationStyle();
     }
 
     public void CancelAnnotationMode()
@@ -633,6 +634,68 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         StatusMessage = "标注删除已暂存，请保存标注写入 PDF";
         NotifyAnnotationSaveChanged();
         return Task.CompletedTask;
+    }
+
+    public Task UpdateTextAnnotationAsync(PdfAnnotationInfo annotation, string title, string contents)
+    {
+        if (!HasDocument || IsBusy || annotation.Type != PdfAnnotationType.Text)
+        {
+            return Task.CompletedTask;
+        }
+
+        var updated = new PdfAnnotationInfo
+        {
+            Id = annotation.Id, Subtype = annotation.Subtype, PageNumber = annotation.PageNumber,
+            Type = annotation.Type, Title = title, Contents = contents, X = annotation.X, Y = annotation.Y,
+            Width = annotation.Width, Height = annotation.Height, StartX = annotation.StartX, StartY = annotation.StartY,
+            EndX = annotation.EndX, EndY = annotation.EndY, Points = annotation.Points,
+            StrokeColor = annotation.StrokeColor, StrokeWidth = annotation.StrokeWidth,
+        };
+        QueueAnnotationUpdate(updated);
+        SelectedPdfAnnotation = updated;
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "文本框修改已暂存，请保存标注写入 PDF";
+        NotifyAnnotationSaveChanged();
+        return Task.CompletedTask;
+    }
+
+    private void ApplySelectedAnnotationStyle()
+    {
+        var annotation = SelectedPdfAnnotation;
+        if (annotation is null || !HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        var updated = new PdfAnnotationInfo
+        {
+            Id = annotation.Id, Subtype = annotation.Subtype, PageNumber = annotation.PageNumber,
+            Type = annotation.Type, Title = annotation.Title, Contents = annotation.Contents,
+            X = annotation.X, Y = annotation.Y, Width = annotation.Width, Height = annotation.Height,
+            StartX = annotation.StartX, StartY = annotation.StartY, EndX = annotation.EndX, EndY = annotation.EndY,
+            Points = annotation.Points, StrokeColor = AnnotationColorHex, StrokeWidth = (double)AnnotationStrokeWidth,
+        };
+        QueueAnnotationUpdate(updated);
+        SelectedPdfAnnotation = updated;
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "标注样式修改已暂存，请保存标注写入 PDF";
+        NotifyAnnotationSaveChanged();
+    }
+
+    private void QueueAnnotationUpdate(PdfAnnotationInfo updated)
+    {
+        var pendingAdd = _pendingAnnotationChanges.FirstOrDefault(change => change.Kind == PdfAnnotationChangeKind.Add
+            && change.Annotation.Id == updated.Id);
+        if (pendingAdd is not null)
+        {
+            _pendingAnnotationChanges.Remove(pendingAdd);
+            _pendingAnnotationChanges.Add(new PdfAnnotationChange(PdfAnnotationChangeKind.Add, updated));
+            return;
+        }
+
+        _pendingAnnotationChanges.RemoveAll(change => change.Kind == PdfAnnotationChangeKind.Update
+            && change.Annotation.Id == updated.Id);
+        _pendingAnnotationChanges.Add(new PdfAnnotationChange(PdfAnnotationChangeKind.Update, updated));
     }
 
     public void SelectPdfAnnotation(PdfAnnotationInfo annotation)
@@ -1489,21 +1552,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        // PDFsharp reads the entire source PDF to inspect annotations. Avoid that work while
-        // reading, and retain the small per-page result once annotation mode has requested it.
-        if (!IsAnnotationMode && _pendingAnnotationChanges.Count == 0)
-        {
-            return;
-        }
-
         try
         {
             var deletedIds = _pendingAnnotationChanges
                 .Where(change => change.Kind == PdfAnnotationChangeKind.Delete)
                 .Select(change => change.Annotation.Id)
                 .ToHashSet(StringComparer.Ordinal);
+            var updates = _pendingAnnotationChanges
+                .Where(change => change.Kind == PdfAnnotationChangeKind.Update)
+                .Select(change => change.Annotation)
+                .ToDictionary(annotation => annotation.Id, StringComparer.Ordinal);
             var annotations = GetCachedAnnotations(_documentId, _currentPage)
                 .Where(annotation => !deletedIds.Contains(annotation.Id))
+                .Select(annotation => updates.TryGetValue(annotation.Id, out var updated) ? updated : annotation)
                 .ToList();
             annotations.AddRange(_pendingAnnotationChanges
                 .Where(change => change.Kind == PdfAnnotationChangeKind.Add
@@ -2454,14 +2515,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == _currentPage + 1);
             ZoomIndicator = $"{_zoom:P0}";
             RefreshCurrentPageOcr();
-            if (IsAnnotationMode)
-            {
-                await EnsureCurrentPageAnnotationsAsync();
-            }
-            else
-            {
-                RefreshCurrentPageAnnotations();
-            }
+            await EnsureCurrentPageAnnotationsAsync();
             StatusMessage = "就绪";
         }
         catch (Exception exception)
@@ -2683,6 +2737,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnAnnotationStrokeWidthChanged(decimal value)
     {
         OnPropertyChanged(nameof(AnnotationStrokeWidthText));
+        ApplySelectedAnnotationStyle();
     }
 
     partial void OnIsReadingCurrentPageChanged(bool value)

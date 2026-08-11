@@ -117,7 +117,8 @@ public partial class MainWindow : Window
         }
 
         ViewModel.ClearOcrHistorySelection();
-        if (!IsWithin(e.Source as Visual, PdfAnnotationOverlay))
+        if (IsWithin(e.Source as Visual, PageSurface)
+            && !IsWithin(e.Source as Visual, PdfAnnotationOverlay))
         {
             ViewModel.ClearPdfAnnotationSelection();
         }
@@ -274,6 +275,25 @@ public partial class MainWindow : Window
                 };
                 layer.Children.Add(highlight);
             }
+            else if (annotation.Type == PdfAnnotationType.Text)
+            {
+                layer.Children.Add(new Border
+                {
+                    Width = width,
+                    Height = height,
+                    Padding = new Thickness(3),
+                    Background = new SolidColorBrush(Color.Parse("#14FFFFFF")),
+                    BorderBrush = annotationBrush,
+                    BorderThickness = new Thickness(1),
+                    Child = new TextBlock
+                    {
+                        Text = annotation.Contents ?? string.Empty,
+                        TextWrapping = TextWrapping.Wrap,
+                        Foreground = annotationBrush,
+                        FontSize = Math.Max(10, 11 * scale),
+                    },
+                });
+            }
             else
             {
                 var generic = new Border
@@ -308,9 +328,17 @@ public partial class MainWindow : Window
                 Tag = annotation,
             };
             deleteItem.Click += DeletePdfAnnotationClick;
+            var menuItems = new List<MenuItem>();
+            if (annotation.Type == PdfAnnotationType.Text)
+            {
+                var editItem = new MenuItem { Header = "编辑文本", Tag = annotation };
+                editItem.Click += EditPdfAnnotationClick;
+                menuItems.Add(editItem);
+            }
+            menuItems.Add(deleteItem);
             layer.ContextMenu = new ContextMenu
             {
-                ItemsSource = new[] { deleteItem },
+                ItemsSource = menuItems,
             };
             Canvas.SetLeft(layer, annotation.Type is PdfAnnotationType.Line or PdfAnnotationType.Freehand ? left - 10 : left);
             Canvas.SetTop(layer, annotation.Type is PdfAnnotationType.Line or PdfAnnotationType.Freehand ? top - 10 : top);
@@ -318,12 +346,35 @@ public partial class MainWindow : Window
         }
     }
 
-    private void PdfAnnotationPointerPressed(object? sender, PointerPressedEventArgs e)
+    private async void PdfAnnotationPointerPressed(object? sender, PointerPressedEventArgs e)
     {
         if (sender is Control { Tag: PdfAnnotationInfo annotation })
         {
             ViewModel.SelectPdfAnnotation(annotation);
+            if (e.ClickCount >= 2 && annotation.Type == PdfAnnotationType.Text)
+            {
+                await EditPdfAnnotationAsync(annotation);
+            }
             e.Handled = true;
+        }
+    }
+
+    private async void EditPdfAnnotationClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is PdfAnnotationInfo annotation)
+        {
+            await EditPdfAnnotationAsync(annotation);
+            e.Handled = true;
+        }
+    }
+
+    private async Task EditPdfAnnotationAsync(PdfAnnotationInfo annotation)
+    {
+        var dialog = new AnnotationCreateWindow(annotation.Title, annotation.Contents);
+        var request = await dialog.ShowDialog<AnnotationCreationRequest?>(this);
+        if (request is not null)
+        {
+            await ViewModel.UpdateTextAnnotationAsync(annotation, request.Title, request.Contents);
         }
     }
 

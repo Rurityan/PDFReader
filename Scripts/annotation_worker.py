@@ -8,6 +8,19 @@ def color(value):
     return tuple(int(value[i:i + 2], 16) / 255 for i in (0, 2, 4))
 
 
+def color_hex(value):
+    if not value or len(value) < 3:
+        return "#2B6CB0"
+    return "#{:02X}{:02X}{:02X}".format(*(round(component * 255) for component in value[:3]))
+
+
+def annotation_color(annotation, info):
+    subject = info.get("subject") or ""
+    if subject.startswith("PDFReaderColor:"):
+        return subject.split(":", 1)[1]
+    return color_hex(annotation.colors.get("stroke"))
+
+
 def flatten_points(vertices):
     for value in vertices or []:
         if isinstance(value, fitz.Point):
@@ -23,7 +36,7 @@ def serialize(annotation, page_number):
     rect = annotation.rect
     info = annotation.info
     kind = annotation.type[1].lower()
-    names = {"text": "Text", "highlight": "Highlight", "ink": "Freehand", "line": "Line", "square": "Rectangle"}
+    names = {"text": "Text", "freetext": "Text", "highlight": "Highlight", "ink": "Freehand", "line": "Line", "square": "Rectangle"}
     vertices = list(flatten_points(annotation.vertices))
     points = [{"x": point.x, "y": point.y} for point in vertices]
     start, end = (vertices[0], vertices[-1]) if len(vertices) >= 2 else (rect.tl, rect.br)
@@ -32,7 +45,7 @@ def serialize(annotation, page_number):
             "contents": info.get("content"), "x": rect.x0, "y": rect.y0,
             "width": rect.width, "height": rect.height, "startX": start.x,
             "startY": start.y, "endX": end.x, "endY": end.y, "points": points,
-            "strokeColor": "#2B6CB0", "strokeWidth": annotation.border.get("width", 2) or 2}
+            "strokeColor": annotation_color(annotation, info), "strokeWidth": annotation.border.get("width", 2) or 2}
 
 
 def add(page, item):
@@ -41,7 +54,17 @@ def add(page, item):
     if isinstance(kind, str):
         kind = {"Text": 0, "Line": 1, "Highlight": 2, "Rectangle": 3, "Freehand": 4}.get(kind, -1)
     rect = fitz.Rect(annotation["x"], annotation["y"], annotation["x"] + annotation["width"], annotation["y"] + annotation["height"])
-    if kind == 0: annot = page.add_text_annot(rect.tl, annotation.get("contents", ""))
+    if kind == 0:
+        annot = page.add_freetext_annot(
+            rect,
+            annotation.get("contents", ""),
+            fontsize=11,
+            text_color=color(annotation.get("strokeColor")),
+        )
+        annot.set_info(title=annotation.get("title") or "PDF Reader", content=annotation.get("contents") or "",
+                       subject="PDFReaderColor:" + (annotation.get("strokeColor") or "#2B6CB0"))
+        annot.update()
+        return
     elif kind == 1: annot = page.add_line_annot(fitz.Point(annotation["startX"], annotation["startY"]), fitz.Point(annotation["endX"], annotation["endY"]))
     elif kind == 2: annot = page.add_highlight_annot(rect)
     elif kind == 3: annot = page.add_rect_annot(rect)
@@ -68,7 +91,7 @@ def main():
     with open(sys.argv[3], encoding="utf-8") as source: changes = json.load(source)
     for item in changes:
         annotation = item["annotation"]; page = doc[annotation["pageNumber"] - 1]
-        if item["kind"] in (1, "Delete"):
+        if item["kind"] in (1, "Delete", 2, "Update"):
             annotation_id = annotation.get("id", "")
             if not annotation_id.startswith("xref:"):
                 raise ValueError("只能删除具有 PDF xref 标识的已保存标注")
@@ -76,7 +99,18 @@ def main():
             target = next((a for a in page.annots() or [] if a.xref == xref), None)
             if target is None:
                 raise ValueError(f"未找到 PDF 标注对象 xref:{xref}")
-            page.delete_annot(target)
+            if item["kind"] in (1, "Delete"):
+                page.delete_annot(target)
+            else:
+                target.set_info(title=annotation.get("title") or "PDF Reader", content=annotation.get("contents") or "",
+                                subject="PDFReaderColor:" + (annotation.get("strokeColor") or "#2B6CB0"))
+                stroke = color(annotation.get("strokeColor"))
+                if target.type[1].lower() == "freetext":
+                    target.update(text_color=stroke, border_color=stroke)
+                else:
+                    target.set_colors(stroke=stroke)
+                    target.set_border(width=max(0.1, annotation.get("strokeWidth", 2)))
+                    target.update()
         else: add(page, item)
     doc.saveIncr(); doc.close()
 

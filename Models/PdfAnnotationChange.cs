@@ -4,6 +4,7 @@ public enum PdfAnnotationChangeKind
 {
     Add,
     Delete,
+    Update,
 }
 
 public sealed record PdfAnnotationChange(

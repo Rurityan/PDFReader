@@ -8,9 +8,15 @@ public sealed record AnnotationCreationRequest(string Title, string Contents);
 public partial class AnnotationCreateWindow : Window
 {
     public AnnotationCreateWindow()
+        : this(null, null)
+    {
+    }
+
+    public AnnotationCreateWindow(string? title, string? contents)
     {
         InitializeComponent();
-        TitleInput.Text = "PDF Reader";
+        TitleInput.Text = string.IsNullOrWhiteSpace(title) ? "PDF Reader" : title;
+        ContentsInput.Text = contents ?? string.Empty;
     }
 
     private void ConfirmClick(object? sender, RoutedEventArgs e)
