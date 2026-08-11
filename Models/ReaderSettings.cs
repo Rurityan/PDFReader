@@ -37,4 +37,14 @@ public sealed class ReaderSettings
     {
         return Path.Combine(GetUserDataDirectory(), "resource", "voice");
     }
+
+    public static string GetDefaultPageCacheDirectory()
+    {
+        return Path.Combine(GetUserDataDirectory(), "cache");
+    }
+
+    public static string GetPagePreviewCacheDirectory(Guid documentId)
+    {
+        return Path.Combine(GetDefaultPageCacheDirectory(), documentId.ToString("N"));
+    }
 }

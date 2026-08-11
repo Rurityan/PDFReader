@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
@@ -32,6 +33,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private Bitmap? _pageImage;
     private int _currentPage;
     private double _zoom = 1.25;
+    private PagePreview? _selectedPagePreview;
     private readonly List<PdfAnnotationChange> _pendingAnnotationChanges = new();
 
     [ObservableProperty]
@@ -54,6 +56,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private string _pageIndicator = "0 / 0";
+
+    [ObservableProperty]
+    private string _pageNumberInput = "1";
 
     [ObservableProperty]
     private string _zoomIndicator = "125%";
@@ -150,8 +155,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<OcrRecord> OcrHistory { get; } = new();
     public ObservableCollection<OcrRecord> CurrentPageOcrRecords { get; } = new();
     public ObservableCollection<PdfAnnotationInfo> CurrentPageAnnotations { get; } = new();
+    public ObservableCollection<PagePreview> PagePreviews { get; } = new();
     public ObservableCollection<Bookmark> Bookmarks { get; } = new();
     public ObservableCollection<PdfDocument> Documents { get; } = new();
+
+    public PagePreview? SelectedPagePreview
+    {
+        get => _selectedPagePreview;
+        private set => SetProperty(ref _selectedPagePreview, value);
+    }
 
     public MainWindowViewModel()
     {
@@ -278,6 +290,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ => "文本标注",
     };
     public string ReadCurrentPageButtonText => IsReadingCurrentPage ? "停止朗读" : "朗读";
+    public bool IsBookmarkPaneVisible => !IsPagePreviewPaneVisible;
+
+    [ObservableProperty]
+    private bool _isPagePreviewPaneVisible;
+
+    [RelayCommand]
+    private void ShowPagePreviewPane()
+    {
+        IsPagePreviewPaneVisible = true;
+    }
+
+    [RelayCommand]
+    private void ShowBookmarkPane()
+    {
+        IsPagePreviewPaneVisible = false;
+    }
 
     [RelayCommand]
     private void ToggleCurrentPageOcr()
@@ -1018,6 +1046,47 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
+    private async Task JumpToPageAsync()
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        if (!int.TryParse(PageNumberInput, out var pageNumber))
+        {
+            StatusMessage = "请输入有效的页码";
+            PageNumberInput = CurrentPageNumber.ToString();
+            return;
+        }
+
+        if (pageNumber < 1 || pageNumber > _pdfService.PageCount)
+        {
+            StatusMessage = $"页码必须在 1 到 {_pdfService.PageCount} 之间";
+            PageNumberInput = Math.Clamp(pageNumber, 1, Math.Max(1, _pdfService.PageCount)).ToString();
+            return;
+        }
+
+        await ShowPageAsync(pageNumber - 1);
+    }
+
+    public async Task GoToPageAsync(int pageNumber)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        if (pageNumber < 1 || pageNumber > _pdfService.PageCount)
+        {
+            StatusMessage = $"页码必须在 1 到 {_pdfService.PageCount} 之间";
+            return;
+        }
+
+        await ShowPageAsync(pageNumber - 1);
+    }
+
+    [RelayCommand]
     private async Task ZoomInAsync()
     {
         if (HasDocument)
@@ -1133,6 +1202,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         try
         {
+            DeletePagePreviewCache(document.Id);
             await _documentRepository.RebindAsync(document.Id, newFilePath);
             document.FilePath = Path.GetFullPath(newFilePath);
             document.Title = Path.GetFileName(document.FilePath);
@@ -1154,6 +1224,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         try
         {
+            DeletePagePreviewCache(document.Id);
             var isCurrentDocument = document.Id == _documentId;
             if (isCurrentDocument)
             {
@@ -1166,6 +1237,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 DocumentTitle = "未打开文档";
                 DocumentPath = "从文件菜单打开一个 PDF 文档";
                 PageIndicator = "0 / 0";
+                PageNumberInput = "1";
+                ClearPagePreviews();
                 OcrHistory.Clear();
                 Bookmarks.Clear();
                 _deletedBookmarkHistory.Clear();
@@ -1202,8 +1275,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             HasDocument = true;
             _currentPage = 0;
             _zoom = 1.25;
+            ClearPagePreviews();
             await ShowPageAsync(_currentPage);
             await LoadDocumentDataAsync();
+            await LoadPagePreviewsAsync();
             StatusMessage = "文档已打开";
         }
         catch (Exception exception)
@@ -2179,6 +2254,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             oldImage?.Dispose();
             _currentPage = pageIndex;
             PageIndicator = $"{_currentPage + 1} / {_pdfService.PageCount}";
+            PageNumberInput = (_currentPage + 1).ToString();
+            SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == _currentPage + 1);
             ZoomIndicator = $"{_zoom:P0}";
             RefreshCurrentPageOcr();
             RefreshCurrentPageAnnotations();
@@ -2193,6 +2270,132 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsBusy = false;
             NotifyNavigationChanged();
         }
+    }
+
+    private async Task LoadPagePreviewsAsync()
+    {
+        ClearPagePreviews();
+        if (!HasDocument || _pdfService.PageCount == 0)
+        {
+            return;
+        }
+
+        const double previewZoom = 0.18;
+        var cacheDirectory = ReaderSettings.GetPagePreviewCacheDirectory(_documentId);
+        var metadataPath = Path.Combine(cacheDirectory, "metadata.json");
+        var expectedMetadata = CreatePagePreviewCacheMetadata(previewZoom);
+        var cacheIsValid = IsPagePreviewCacheValid(metadataPath, expectedMetadata);
+
+        if (!cacheIsValid)
+        {
+            DeletePagePreviewCache(_documentId);
+            Directory.CreateDirectory(cacheDirectory);
+        }
+
+        for (var pageIndex = 0; pageIndex < _pdfService.PageCount; pageIndex++)
+        {
+            var cachePath = Path.Combine(cacheDirectory, $"page-{pageIndex + 1:0000}.png");
+            Bitmap? image = null;
+
+            if (cacheIsValid && File.Exists(cachePath))
+            {
+                try
+                {
+                    await using var cachedStream = File.OpenRead(cachePath);
+                    image = new Bitmap(cachedStream);
+                }
+                catch (Exception)
+                {
+                    DeleteResource(cachePath);
+                }
+            }
+
+            if (image is null)
+            {
+                StatusMessage = $"正在生成页面预览 {pageIndex + 1}/{_pdfService.PageCount}...";
+                await using var stream = await _pdfService.RenderPageAsync(pageIndex, previewZoom);
+                await using (var cacheStream = File.Create(cachePath))
+                {
+                    await stream.CopyToAsync(cacheStream);
+                }
+
+                stream.Position = 0;
+                image = new Bitmap(stream);
+            }
+
+            PagePreviews.Add(new PagePreview(pageIndex + 1, image));
+        }
+
+        await File.WriteAllTextAsync(metadataPath, JsonSerializer.Serialize(expectedMetadata));
+
+        SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == CurrentPageNumber);
+    }
+
+    private PagePreviewCacheMetadata CreatePagePreviewCacheMetadata(double previewZoom)
+    {
+        var fileInfo = new FileInfo(DocumentPath);
+        return new PagePreviewCacheMetadata(
+            fileInfo.Length,
+            fileInfo.LastWriteTimeUtc.Ticks,
+            _pdfService.PageCount,
+            previewZoom);
+    }
+
+    private static bool IsPagePreviewCacheValid(string metadataPath, PagePreviewCacheMetadata expected)
+    {
+        if (!File.Exists(metadataPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            var metadata = JsonSerializer.Deserialize<PagePreviewCacheMetadata>(File.ReadAllText(metadataPath));
+            return metadata is not null
+                && metadata.SourceLength == expected.SourceLength
+                && metadata.SourceLastWriteUtcTicks == expected.SourceLastWriteUtcTicks
+                && metadata.PageCount == expected.PageCount
+                && Math.Abs(metadata.Zoom - expected.Zoom) < 0.0001;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
+
+    private static void DeletePagePreviewCache(Guid documentId)
+    {
+        var directory = ReaderSettings.GetPagePreviewCacheDirectory(documentId);
+        try
+        {
+            if (Directory.Exists(directory))
+            {
+                Directory.Delete(directory, true);
+            }
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    private sealed record PagePreviewCacheMetadata(
+        long SourceLength,
+        long SourceLastWriteUtcTicks,
+        int PageCount,
+        double Zoom);
+
+    private void ClearPagePreviews()
+    {
+        foreach (var preview in PagePreviews)
+        {
+            preview.Dispose();
+        }
+
+        PagePreviews.Clear();
+        SelectedPagePreview = null;
     }
 
     partial void OnHasDocumentChanged(bool value)
@@ -2211,6 +2414,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             IsCurrentPageOcrVisible = false;
             CurrentPageOcrRecords.Clear();
             CurrentPageAnnotations.Clear();
+            ClearPagePreviews();
         }
         NotifyBookmarkChanged();
     }
@@ -2345,6 +2549,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnHasPendingOcrChanged(bool value) => OnPropertyChanged(nameof(CanCancelOcr));
     partial void OnIsOcrEnabledChanged(bool value) => NotifyCaptureChanged();
     partial void OnIsContinuousCaptureChanged(bool value) => NotifyCaptureChanged();
+    partial void OnIsPagePreviewPaneVisibleChanged(bool value) =>
+        OnPropertyChanged(nameof(IsBookmarkPaneVisible));
 
     private void NotifyNavigationChanged()
     {
@@ -2357,6 +2563,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ocrCancellation?.Cancel();
         _readingCancellation?.Cancel();
         PageImage?.Dispose();
+        ClearPagePreviews();
         _pdfService.Dispose();
         _audioPlaybackService.Dispose();
         try

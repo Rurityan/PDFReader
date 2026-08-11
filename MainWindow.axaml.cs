@@ -67,8 +67,8 @@ public partial class MainWindow : Window
 
     private MainWindowViewModel ViewModel => (MainWindowViewModel)DataContext!;
 
-    private ColumnDefinition SidebarColumn => ContentLayout.ColumnDefinitions[0];
-    private ColumnDefinition SidebarSplitterColumn => ContentLayout.ColumnDefinitions[1];
+    private ColumnDefinition SidebarColumn => ContentLayout.ColumnDefinitions[1];
+    private ColumnDefinition SidebarSplitterColumn => ContentLayout.ColumnDefinitions[2];
 
     private void ToggleSidebarClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
@@ -699,6 +699,14 @@ public partial class MainWindow : Window
         finally
         {
             _isOpeningDocument = false;
+        }
+    }
+
+    private async void PagePreviewSelectionChanged(object? sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ListBox listBox && listBox.SelectedItem is PagePreview preview)
+        {
+            await ViewModel.GoToPageAsync(preview.PageNumber);
         }
     }
 

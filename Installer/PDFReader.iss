@@ -32,6 +32,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\PDFReader.exe"; WorkingDir:
 Filename: "{app}\PDFReader.exe"; Description: "Launch {#MyAppName}"; WorkingDir: "{app}"; Flags: postinstall nowait skipifsilent
 
 [UninstallDelete]
+Type: filesandordirs; Name: "{app}\user_data\cache"
 Type: filesandordirs; Name: "{app}\user_data"; Check: ShouldDeleteUserData
 
 [Code]

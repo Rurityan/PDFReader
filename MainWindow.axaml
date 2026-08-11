@@ -42,6 +42,14 @@
             <Setter Property="Background" Value="#F1F3F5" />
             <Setter Property="Foreground" Value="#3B454F" />
         </Style>
+        <Style Selector="ToggleButton.mode-button">
+            <Setter Property="Background" Value="#F1F3F5" />
+            <Setter Property="Foreground" Value="#4A5560" />
+        </Style>
+        <Style Selector="ToggleButton.mode-button:checked">
+            <Setter Property="Background" Value="#E6A23C" />
+            <Setter Property="Foreground" Value="#20252B" />
+        </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,Auto,*" Background="#F5F6F8">
         <Border Grid.Row="0" Background="#20252B" Padding="20,14">
@@ -94,7 +102,20 @@
                 <Border Grid.Column="2" Width="1" Height="24" Background="#D9DDE2" Margin="16,0" />
                 <Button Grid.Column="3" Command="{Binding GoPreviousCommand}" Padding="10,7" Content="上一页" />
                 <Button Grid.Column="4" Command="{Binding GoNextCommand}" Padding="10,7" Margin="6,0,0,0" Content="下一页" />
-                <TextBlock Grid.Column="5" Text="{Binding PageIndicator}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" Margin="14,0" />
+                <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="14,0">
+                    <TextBlock Text="{Binding PageIndicator}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" />
+                    <TextBox Text="{Binding PageNumberInput, Mode=TwoWay}"
+                             Width="62"
+                             Height="30"
+                             TextAlignment="Center"
+                             IsEnabled="{Binding HasDocument}"
+                             ToolTip.Tip="输入页码" />
+                    <Button Content="跳转"
+                            Command="{Binding JumpToPageCommand}"
+                            IsEnabled="{Binding HasDocument}"
+                            Padding="8,5"
+                            ToolTip.Tip="跳转到指定页" />
+                </StackPanel>
                 <Button Grid.Column="6"
                         Content="{Binding CurrentPageOcrButtonText}"
                         Command="{Binding ToggleCurrentPageOcrCommand}"
@@ -190,13 +211,41 @@
 
         <Grid x:Name="ContentLayout" Grid.Row="2">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="38" />
                 <ColumnDefinition Width="230" MinWidth="180" MaxWidth="420" />
                 <ColumnDefinition Width="5" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="300" />
             </Grid.ColumnDefinitions>
-            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="12,14">
-                <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+            <Border Grid.Column="0" Background="#EEF1F4" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="4,12">
+                <StackPanel Spacing="8">
+                    <ToggleButton Classes="mode-button"
+                                  Content="▦"
+                                  Command="{Binding ShowPagePreviewPaneCommand}"
+                                  IsChecked="{Binding IsPagePreviewPaneVisible, Mode=TwoWay}"
+                                  IsEnabled="{Binding HasDocument}"
+                                  Width="30"
+                                  Height="34"
+                                  FontSize="18"
+                                  Padding="0"
+                                  HorizontalContentAlignment="Center"
+                                  VerticalContentAlignment="Center"
+                                  ToolTip.Tip="页面缩略图" />
+                    <ToggleButton Classes="mode-button"
+                                  Content="☷"
+                                  Command="{Binding ShowBookmarkPaneCommand}"
+                                  IsChecked="{Binding IsBookmarkPaneVisible, Mode=OneWay}"
+                                  Width="30"
+                                  Height="34"
+                                  FontSize="18"
+                                  Padding="0"
+                                  HorizontalContentAlignment="Center"
+                                  VerticalContentAlignment="Center"
+                                  ToolTip.Tip="书签树" />
+                </StackPanel>
+            </Border>
+            <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="12,14">
+                <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
                     <TextBlock Grid.Row="0" Text="PDF 文档" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
                     <ListBox Grid.Row="1"
                              ItemsSource="{Binding Documents}"
@@ -211,38 +260,74 @@
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <Border Grid.Row="2" Height="1" Background="#E5E8EB" />
-                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto">
-                        <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" VerticalAlignment="Center" />
-                        <Button Grid.Column="1"
-                                Content="+"
-                                Click="CreateBookmarkClick"
-                                Width="36"
-                                Height="36"
-                                FontSize="25"
-                                Padding="0"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                ToolTip.Tip="创建书签" />
-                        <Button Grid.Column="2"
-                                Content="⌖"
-                                Click="FindCurrentPageBookmarkClick"
-                                Width="36"
-                                Height="36"
-                                FontSize="23"
-                                Padding="0"
-                                Margin="5,0,0,0"
-                                HorizontalContentAlignment="Center"
-                                VerticalContentAlignment="Center"
-                                ToolTip.Tip="查找当前页书签" />
-                    </Grid>
-                    <Grid Grid.Row="4">
-                        <TreeView x:Name="BookmarkTree"
-                                  ItemsSource="{Binding Bookmarks}"
-                                  SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
-                                  MinHeight="230"
-                                  DoubleTapped="BookmarkDoubleTapped">
-                            <TreeView.DataTemplates>
+                    <Grid Grid.Row="2">
+                        <Border Background="#F5F7F9"
+                                BorderBrush="#E1E5E9"
+                                BorderThickness="1"
+                                Padding="8"
+                                IsVisible="{Binding IsPagePreviewPaneVisible}">
+                            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+                            <TextBlock Text="页面预览" FontSize="12" FontWeight="SemiBold" Foreground="#66717C" />
+                            <ListBox x:Name="PagePreviewList"
+                                     Grid.Row="1"
+                                     ItemsSource="{Binding PagePreviews}"
+                                     SelectedItem="{Binding SelectedPagePreview, Mode=TwoWay}"
+                                     SelectionChanged="PagePreviewSelectionChanged">
+                                <ListBox.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <WrapPanel Orientation="Horizontal" />
+                                    </ItemsPanelTemplate>
+                                </ListBox.ItemsPanel>
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate x:DataType="model:PagePreview">
+                                        <StackPanel Width="82" Spacing="3" Margin="2">
+                                            <Border Background="White" BorderBrush="#C8D0D8" BorderThickness="1" Padding="3">
+                                                <Image Source="{Binding Image}"
+                                                       Width="72"
+                                                       Height="104"
+                                                       Stretch="Uniform" />
+                                            </Border>
+                                            <TextBlock Text="{Binding PageNumber}"
+                                                       FontSize="10"
+                                                       Foreground="#5D6873"
+                                                       HorizontalAlignment="Center" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                            </Grid>
+                        </Border>
+                        <Grid IsVisible="{Binding IsBookmarkPaneVisible}" RowDefinitions="Auto,*" RowSpacing="12">
+                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+                                <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" VerticalAlignment="Center" />
+                                <Button Grid.Column="1"
+                                        Content="+"
+                                        Click="CreateBookmarkClick"
+                                        Width="36"
+                                        Height="36"
+                                        FontSize="25"
+                                        Padding="0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="创建书签" />
+                                <Button Grid.Column="2"
+                                        Content="⌖"
+                                        Click="FindCurrentPageBookmarkClick"
+                                        Width="36"
+                                        Height="36"
+                                        FontSize="23"
+                                        Padding="0"
+                                        Margin="5,0,0,0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="查找当前页书签" />
+                            </Grid>
+                            <Grid Grid.Row="1">
+                                <TreeView x:Name="BookmarkTree"
+                                          ItemsSource="{Binding Bookmarks}"
+                                          SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
+                                          DoubleTapped="BookmarkDoubleTapped">
+                                    <TreeView.DataTemplates>
                                 <TreeDataTemplate DataType="model:Bookmark" x:DataType="model:Bookmark" ItemsSource="{Binding DisplayChildren}">
                                     <Grid Classes="bookmark-row" ColumnDefinitions="Auto,*" Margin="0,3" Background="Transparent">
                                         <Grid.ContextMenu>
@@ -292,14 +377,16 @@
                                         </Grid.ContextMenu>
                                     </Grid>
                                 </TreeDataTemplate>
-                            </TreeView.DataTemplates>
-                        </TreeView>
-                        <Canvas x:Name="BookmarkDragOverlay" IsHitTestVisible="False" />
+                                    </TreeView.DataTemplates>
+                                </TreeView>
+                                <Canvas x:Name="BookmarkDragOverlay" IsHitTestVisible="False" />
+                            </Grid>
+                        </Grid>
                     </Grid>
                 </Grid>
             </Border>
             <GridSplitter x:Name="SidebarSplitter"
-                          Grid.Column="1"
+                          Grid.Column="2"
                           Background="#D9DDE2"
                           ResizeDirection="Columns"
                           ResizeBehavior="PreviousAndNext"
@@ -307,7 +394,7 @@
                           PointerReleased="SidebarSplitterPointerReleased"
                           ToolTip.Tip="拖动调整左侧栏宽度" />
 
-            <Border Grid.Column="2" Background="#E9EBEE" Padding="28,24">
+            <Border Grid.Column="3" Background="#E9EBEE" Padding="28,24">
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
                         <Border Background="White" BoxShadow="0 2 12 0 #24000000" IsVisible="{Binding HasDocument}">
@@ -337,7 +424,7 @@
                 </ScrollViewer>
             </Border>
 
-            <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
+            <Border Grid.Column="4" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="18">
                     <TextBlock Text="工作区" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
