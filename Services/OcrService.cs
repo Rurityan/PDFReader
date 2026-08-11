@@ -25,7 +25,8 @@ public sealed class OcrService
             }
 
             var pythonPath = ResolvePythonPath();
-            var workerPath = Path.Combine(Directory.GetCurrentDirectory(), "Scripts", "ocr_worker.py");
+            var applicationDirectory = AppContext.BaseDirectory;
+            var workerPath = Path.Combine(applicationDirectory, "Scripts", "ocr_worker.py");
             if (!File.Exists(pythonPath))
             {
                 throw new FileNotFoundException("找不到 Python 运行时，请检查 .venv。", pythonPath);
@@ -39,7 +40,7 @@ public sealed class OcrService
             var startInfo = new ProcessStartInfo
             {
                 FileName = pythonPath,
-                WorkingDirectory = Directory.GetCurrentDirectory(),
+                WorkingDirectory = applicationDirectory,
                 UseShellExecute = false,
                 RedirectStandardError = true,
                 RedirectStandardOutput = true,
@@ -105,7 +106,7 @@ public sealed class OcrService
             return configuredPath;
         }
 
-        return Path.Combine(Directory.GetCurrentDirectory(), ".venv", "Scripts", "python.exe");
+        return Path.Combine(AppContext.BaseDirectory, ".venv", "Scripts", "python.exe");
     }
 }
 

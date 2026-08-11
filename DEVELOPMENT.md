@@ -46,6 +46,9 @@ PDFReader/
 │  └─ MainWindowViewModel.cs   主界面状态和主要业务流程
 ├─ Scripts/
 │  └─ ocr_worker.py            ONNX Runtime OCR Python worker
+├─ ocr_model/                  OCR ONNX 模型和识别字典
+├─ Installer/
+│  └─ PDFReader.iss            Inno Setup 安装脚本
 ├─ MainWindow.axaml            主界面布局和绑定
 ├─ MainWindow.axaml.cs         页面交互、框选、拖拽和叠加层
 ├─ template.pdf                当前测试 PDF
@@ -54,9 +57,14 @@ PDFReader/
 
 ## 4. 运行时数据目录
 
-默认路径相对于程序目录，集中在 `user_data` 下：
+模型与运行时数据相对于程序目录分别存放：
 
 ```text
+ocr_model/
+├─ det.onnx                    OCR 检测模型
+├─ rec.onnx                    OCR 识别模型
+└─ inference.yml               OCR 识别字典
+
 user_data/
 ├─ reader.db
 ├─ settings.json
@@ -201,6 +209,32 @@ dotnet run
 dotnet build --no-restore
 ```
 
+Release 发布 Windows x64 版本：
+
+```powershell
+dotnet restore
+dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o .\publish\win-x64
+```
+
+发布目录已经包含 `PDFReader.exe`、`Scripts/ocr_worker.py`、OCR 依赖清单和 `ocr_model` 模型。`.NET` 使用 self-contained 发布，但 Python 仍需单独准备。可在发布目录创建虚拟环境：
+
+```powershell
+Set-Location .\publish\win-x64
+py -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r .\Scripts\requirements-ocr.txt
+.\PDFReader.exe
+```
+
+也可以不在发布目录创建 `.venv`，通过 `PDFREADER_PYTHON` 环境变量指向已有 Python 解释器。应用应从发布目录启动，以便数据库、配置和资源都位于 exe 旁边的 `user_data` 中。
+
+也可以使用 `Scripts/build-release.ps1` 将当前 Python 虚拟环境复制进发布目录；安装 Inno Setup 后，加上 `-BuildInstaller` 参数即可生成安装包：
+
+```powershell
+.\Scripts\build-release.ps1 -BuildInstaller
+```
+
+安装包会将 Python、ONNX Runtime、OCR worker 和 `ocr_model` 一起安装。卸载时会询问是否删除 `user_data`；选择保留即可保留数据库、设置、截图和语音资源。
+
 OCR 服务默认使用项目根目录下的：
 
 ```text
@@ -213,7 +247,7 @@ OCR 服务默认使用项目根目录下的：
 python -m pip install -r Scripts/requirements-ocr.txt
 ```
 
-默认模型目录为 `user_data/resource/ocr/`，其中放置 `det.onnx`、`rec.onnx` 和识别模型的 `inference.yml`（也可使用 `ppocr_keys_v1.txt`）。设备选择通过 `PDFREADER_OCR_DEVICE` 控制：`auto` 默认优先 DirectML，`cpu` 强制 CPU，`directml` 强制 DirectML。也可以用 `PDFREADER_OCR_MODEL_DIR`、`PDFREADER_OCR_DET_MODEL`、`PDFREADER_OCR_REC_MODEL` 和 `PDFREADER_OCR_DICTIONARY` 覆盖资源路径。
+默认模型目录为应用目录下的 `ocr_model/`，其中放置 `det.onnx`、`rec.onnx` 和识别模型的 `inference.yml`（也可使用 `ppocr_keys_v1.txt`）。设备选择通过 `PDFREADER_OCR_DEVICE` 控制：`auto` 默认优先 DirectML，`cpu` 强制 CPU，`directml` 强制 DirectML。也可以用 `PDFREADER_OCR_MODEL_DIR`、`PDFREADER_OCR_DET_MODEL`、`PDFREADER_OCR_REC_MODEL` 和 `PDFREADER_OCR_DICTIONARY` 覆盖资源路径。
 
 建议验证以下流程：
 

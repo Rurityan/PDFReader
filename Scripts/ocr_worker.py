@@ -76,10 +76,11 @@ class OcrEngine:
 
     @classmethod
     def from_environment(cls):
+        application_directory = Path(__file__).resolve().parent.parent
         model_dir = Path(
             os.environ.get(
                 "PDFREADER_OCR_MODEL_DIR",
-                Path.cwd() / "user_data" / "resource" / "ocr",
+                application_directory / "ocr_model",
             )
         )
         det_path = Path(
