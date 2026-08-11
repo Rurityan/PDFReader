@@ -31,23 +31,20 @@ try {
     Copy-Item -LiteralPath $pythonEnvironment -Destination $packagedPython -Recurse -Force
 
     if ($BuildInstaller) {
-        $iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-        if ($null -eq $iscc) {
+        $isccPath = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Path
+        if ([string]::IsNullOrWhiteSpace($isccPath)) {
             $knownCompilerPaths = @(
                 "${env:ProgramFiles}\Inno Setup 7\ISCC.exe",
                 "${env:ProgramFiles}\Inno Setup 6\ISCC.exe",
                 "${env:ProgramFiles(x86)}\Inno Setup 7\ISCC.exe",
                 "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
             )
-            $knownCompilerPath = $knownCompilerPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
-            if ($knownCompilerPath) {
-                $iscc = Get-Item -LiteralPath $knownCompilerPath
-            }
+            $isccPath = $knownCompilerPaths | Where-Object { Test-Path $_ } | Select-Object -First 1
         }
-        if ($null -eq $iscc) {
+        if ([string]::IsNullOrWhiteSpace($isccPath)) {
             throw "Inno Setup compiler ISCC.exe was not found in PATH."
         }
-        & $iscc.Source .\Installer\PDFReader.iss
+        & $isccPath .\Installer\PDFReader.iss
     }
 }
 finally {
