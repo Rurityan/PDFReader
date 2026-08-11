@@ -443,7 +443,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    [RelayCommand]
+    [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleReadCurrentPageAsync()
     {
         if (IsAudioPlaying || IsReadingCurrentPage)
