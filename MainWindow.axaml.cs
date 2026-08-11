@@ -13,8 +13,10 @@ using Avalonia.Controls.Shapes;
 using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Platform.Storage;
+using Avalonia.Threading;
 using Avalonia.VisualTree;
 using PDFReader.Models;
+using PDFReader.Controls;
 using PDFReader.ViewModels;
 
 namespace PDFReader;
@@ -51,6 +53,11 @@ public partial class MainWindow : Window
         ContinuousReadingList.AddHandler(
             ScrollViewer.ScrollChangedEvent,
             ContinuousReadingListScrollChanged,
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            true);
+        ContinuousReadingList.AddHandler(
+            OcrOverlayControl.AudioRequestedEvent,
+            ContinuousReadingOcrAudioRequested,
             Avalonia.Interactivity.RoutingStrategies.Bubble,
             true);
         BookmarkTree.AddHandler(
@@ -598,6 +605,28 @@ public partial class MainWindow : Window
         }
     }
 
+    private void DocumentScrollViewerPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (!ViewModel.IsCurrentPageOcrVisible || ViewModel.IsAnnotationMode || ViewModel.CanCapture)
+        {
+            return;
+        }
+
+        const double threshold = 2;
+        var atTop = DocumentScrollViewer.Offset.Y <= threshold;
+        var atBottom = DocumentScrollViewer.Extent.Height - DocumentScrollViewer.Viewport.Height - DocumentScrollViewer.Offset.Y <= threshold;
+        if (e.Delta.Y > 0 && atTop && ViewModel.CurrentPageNumber > 1)
+        {
+            ViewModel.ResumeContinuousReadingAtPage(ViewModel.CurrentPageNumber - 1);
+            e.Handled = true;
+        }
+        else if (e.Delta.Y < 0 && atBottom && ViewModel.CurrentPageNumber < ViewModel.DocumentPageCount)
+        {
+            ViewModel.ResumeContinuousReadingAtPage(ViewModel.CurrentPageNumber + 1);
+            e.Handled = true;
+        }
+    }
+
     private void ContinuousReadingListScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
         if (e.OffsetDelta.Y == 0 || !ViewModel.IsContinuousReadingMode)
@@ -638,12 +667,20 @@ public partial class MainWindow : Window
         ScheduleVisibleReadingPageRenders();
     }
 
+    private async void ContinuousReadingOcrAudioRequested(object? sender, OcrAudioRequestedEventArgs e)
+    {
+        await ViewModel.PlayOrGenerateOcrAudioAsync(e.Record);
+        e.Handled = true;
+    }
+
     private void ScrollContinuousReadingToPage(int pageNumber)
     {
         var page = ViewModel.ReadingPages.FirstOrDefault(item => item.PageNumber == pageNumber);
         if (page is not null)
         {
-            ContinuousReadingList.ScrollIntoView(page);
+            Dispatcher.UIThread.Post(
+                () => ContinuousReadingList.ScrollIntoView(page),
+                DispatcherPriority.Loaded);
         }
     }
 
@@ -1698,6 +1735,79 @@ public partial class MainWindow : Window
             await ViewModel.GenerateSpeechForRecordAsync(record);
             e.Handled = true;
         }
+    }
+
+    private void GenerateOcrWithVoiceSubmenuOpened(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        PopulateOcrVoiceSubmenu(sender, regenerate: false);
+    }
+
+    private void RegenerateOcrWithVoiceSubmenuOpened(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        PopulateOcrVoiceSubmenu(sender, regenerate: true);
+    }
+
+    private void PopulateOcrVoiceSubmenu(object? sender, bool regenerate)
+    {
+        if (sender is not MenuItem menuItem)
+        {
+            return;
+        }
+
+        menuItem.Items.Clear();
+        var record = GetOcrFromMenu(menuItem);
+        var voiceModels = ViewModel.GetConfiguredVoiceModels();
+        if (record is null || voiceModels.Count == 0)
+        {
+            menuItem.Items.Add(new MenuItem { Header = "未配置 Voice Model", IsEnabled = false });
+            return;
+        }
+
+        foreach (var voiceModel in voiceModels)
+        {
+            var voiceItem = new MenuItem
+            {
+                Header = voiceModel.Name,
+                Tag = (record, voiceModel.Name, regenerate),
+            };
+            voiceItem.Click += GenerateOcrAudioWithVoiceClick;
+            menuItem.Items.Add(voiceItem);
+        }
+    }
+
+    private async void GenerateOcrAudioWithVoiceClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is ValueTuple<OcrRecord, string, bool> request)
+        {
+            if (request.Item3)
+            {
+                await ViewModel.RegenerateSpeechForRecordAsync(request.Item1, request.Item2);
+            }
+            else
+            {
+                await ViewModel.GenerateSpeechForRecordAsync(request.Item1, request.Item2);
+            }
+            e.Handled = true;
+        }
+    }
+
+    private async void RemoveOcrRecordClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var record = GetOcrFromMenu(sender);
+        if (record is null)
+        {
+            return;
+        }
+
+        var dialog = new OcrDeleteConfirmWindow(
+            record.Title,
+            "移除会同时删除 OCR 正文、已生成音频和关联截图资源，是否继续？");
+        if (await dialog.ShowDialog<bool>(this))
+        {
+            await ViewModel.DeleteOcrRecordAsync(record);
+        }
+
+        e.Handled = true;
     }
 
     private async void ClearOcrRecordClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)

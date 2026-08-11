@@ -19,6 +19,9 @@ public partial class SettingsWindowViewModel : ObservableObject
     private bool _enableOcrCaptureCache;
 
     [ObservableProperty]
+    private bool _autoGenerateOcrAudio;
+
+    [ObservableProperty]
     private string _ocrCaptureDirectory;
 
     [ObservableProperty]
@@ -40,6 +43,7 @@ public partial class SettingsWindowViewModel : ObservableObject
         _audioDirectory = settings.AudioDirectory;
         _enablePagePreviews = settings.EnablePagePreviews;
         _enableOcrCaptureCache = settings.EnableOcrCaptureCache;
+        _autoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
         _ocrCaptureDirectory = settings.OcrCaptureDirectory;
         _ttsBaseUrl = settings.TtsBaseUrl;
         _ttsApiKey = settings.TtsApiKey;
@@ -92,6 +96,7 @@ public partial class SettingsWindowViewModel : ObservableObject
             AudioDirectory = AudioDirectory,
             EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
+            AutoGenerateOcrAudio = AutoGenerateOcrAudio,
             OcrCaptureDirectory = OcrCaptureDirectory,
             TtsBaseUrl = TtsBaseUrl,
             TtsApiKey = TtsApiKey,

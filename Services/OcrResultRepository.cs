@@ -59,6 +59,24 @@ public sealed class OcrResultRepository
         await database.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<string>> DeleteAudiosAsync(
+        Guid ocrRecordId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var audios = await database.TtsAudioRecords
+            .Where(audio => audio.OcrRecordId == ocrRecordId)
+            .ToListAsync(cancellationToken);
+        var paths = audios
+            .Select(audio => audio.FilePath)
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        database.TtsAudioRecords.RemoveRange(audios);
+        await database.SaveChangesAsync(cancellationToken);
+        return paths;
+    }
+
     public async Task<IReadOnlyList<string>> DeleteAsync(
         Guid recordId,
         CancellationToken cancellationToken = default)

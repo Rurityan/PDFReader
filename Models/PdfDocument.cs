@@ -12,6 +12,7 @@ public sealed class PdfDocument : INotifyPropertyChanged
     private string _filePath = string.Empty;
     private string _title = string.Empty;
     private bool _isMissing;
+    private bool _isArchived;
     private string _pathStatus = string.Empty;
 
     public Guid Id { get; set; } = Guid.NewGuid();
@@ -29,7 +30,11 @@ public sealed class PdfDocument : INotifyPropertyChanged
 
     public DateTime CreatedAtUtc { get; set; }
     public DateTime LastOpenedAtUtc { get; set; }
-    public bool IsArchived { get; set; }
+    public bool IsArchived
+    {
+        get => _isArchived;
+        set => SetProperty(ref _isArchived, value);
+    }
 
     [NotMapped]
     public bool IsMissing

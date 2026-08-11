@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Runtime.CompilerServices;
@@ -10,6 +11,7 @@ public sealed class ReadingPage : IDisposable, INotifyPropertyChanged
 {
     private Bitmap? _image;
     private Bitmap? _previewImage;
+    private bool _isOcrVisible;
 
     public ReadingPage(int pageNumber, double width, double height, string previewCachePath)
     {
@@ -26,6 +28,17 @@ public sealed class ReadingPage : IDisposable, INotifyPropertyChanged
     public bool IsActive { get; set; }
     public bool IsRenderQueued { get; set; }
     public bool IsPreviewQueued { get; set; }
+    public bool IsOcrVisible
+    {
+        get => _isOcrVisible;
+        set
+        {
+            if (_isOcrVisible == value) return;
+            _isOcrVisible = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsOcrVisible)));
+        }
+    }
+    public ObservableCollection<OcrRecord> OcrRecords { get; } = new();
 
     public Bitmap? Image
     {

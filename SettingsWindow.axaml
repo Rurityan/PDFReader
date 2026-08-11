@@ -41,6 +41,8 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
+                <CheckBox Content="OCR 喇叭按钮自动生成缺失音频"
+                          IsChecked="{Binding AutoGenerateOcrAudio}" />
                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,4,0,0">
                     <TextBlock Text="语音模型键值对" FontSize="12" Foreground="#737E88" VerticalAlignment="Center" />
                     <Button Grid.Column="1"

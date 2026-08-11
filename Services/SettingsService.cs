@@ -67,6 +67,7 @@ public sealed class SettingsService
         {
             EnablePagePreviews = settings.EnablePagePreviews,
             EnableOcrCaptureCache = settings.EnableOcrCaptureCache,
+            AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio,
             OcrCaptureDirectory = settings.OcrCaptureDirectory,
             AudioDirectory = settings.AudioDirectory,
             TtsBaseUrl = settings.TtsBaseUrl,

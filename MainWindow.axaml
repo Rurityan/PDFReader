@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:PDFReader.ViewModels"
         xmlns:model="using:PDFReader.Models"
+        xmlns:controls="using:PDFReader.Controls"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d"
@@ -433,6 +434,14 @@
                                                 <MenuItem Header="查看正文" Tag="{Binding}" Click="ViewOcrTextClick" />
                                                 <MenuItem Header="播放音频" Tag="{Binding}" IsEnabled="{Binding HasAudio}" Click="PlayOcrAudioClick" />
                                                 <MenuItem Header="生成音频" Tag="{Binding}" IsEnabled="{Binding !HasAudio}" Click="GenerateOcrAudioClick" />
+                                                <MenuItem Header="以指定模型生成"
+                                                          IsEnabled="{Binding !HasAudio}"
+                                                          SubmenuOpened="GenerateOcrWithVoiceSubmenuOpened" />
+                                                <MenuItem Header="以指定模型重新生成"
+                                                          IsEnabled="{Binding HasAudio}"
+                                                          SubmenuOpened="RegenerateOcrWithVoiceSubmenuOpened" />
+                                                <Separator />
+                                                <MenuItem Header="移除此条记录" Tag="{Binding}" Click="RemoveOcrRecordClick" />
                                             </ContextMenu>
                                         </Grid.ContextMenu>
                                     </Grid>
@@ -479,6 +488,10 @@
                                                    Stretch="Fill"
                                                    AttachedToVisualTree="ReadingPageImageAttachedToVisualTree"
                                                    DetachedFromVisualTree="ReadingPageImageDetachedFromVisualTree" />
+                                            <controls:OcrOverlayControl Records="{Binding OcrRecords}"
+                                                                        IsVisible="{Binding IsOcrVisible}"
+                                                                        HorizontalAlignment="Stretch"
+                                                                        VerticalAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <TextBlock Text="{Binding PageNumber}"
@@ -494,7 +507,8 @@
                               IsVisible="{Binding !IsContinuousReadingMode}"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto"
-                              ScrollChanged="DocumentScrollViewerScrollChanged">
+                              ScrollChanged="DocumentScrollViewerScrollChanged"
+                              PointerWheelChanged="DocumentScrollViewerPointerWheelChanged">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Top" RowDefinitions="Auto,Auto,Auto">
                         <Border Grid.Row="0"
                                 Background="White"

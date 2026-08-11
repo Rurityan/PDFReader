@@ -140,6 +140,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _enableOcrCaptureCache;
 
     [ObservableProperty]
+    private bool _autoGenerateOcrAudio;
+
+    [ObservableProperty]
     private string _ocrCaptureDirectory = ReaderSettings.GetDefaultCaptureDirectory();
 
     [ObservableProperty]
@@ -207,6 +210,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _bookmarkRepository = new BookmarkRepository();
         EnablePagePreviews = settings.EnablePagePreviews;
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
+        AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
         AudioDirectory = settings.AudioDirectory;
         TtsBaseUrl = settings.TtsBaseUrl;
@@ -286,6 +290,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             RefreshBookmarkDisplayTree();
             RefreshCurrentPageOcr();
+            RefreshReadingPageOcr();
             StatusMessage = "OCR 记录及其音频资源已删除";
         }
         catch (Exception exception)
@@ -413,7 +418,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        IsCurrentPageOcrVisible = !IsCurrentPageOcrVisible;
+        if (!IsCurrentPageOcrVisible)
+        {
+            IsCurrentPageOcrVisible = true;
+        }
+        else
+        {
+            IsCurrentPageOcrVisible = false;
+        }
+
         StatusMessage = IsCurrentPageOcrVisible
             ? $"已显示第 {_currentPage + 1} 页的 {CurrentPageOcrRecords.Count} 条 OCR"
             : "已隐藏当前页 OCR 框";
@@ -1345,6 +1358,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ContinuousReadingPageRequested?.Invoke(pageNumber);
     }
 
+    public void ResumeContinuousReadingAtPage(int pageNumber)
+    {
+        if (!HasDocument || IsAnnotationMode || CanCapture
+            || pageNumber < 1 || pageNumber > _pdfService.PageCount)
+        {
+            return;
+        }
+
+        IsCurrentPageOcrVisible = false;
+        _currentPage = pageNumber - 1;
+        PageIndicator = $"{pageNumber} / {_pdfService.PageCount}";
+        PageNumberInput = pageNumber.ToString();
+        SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == pageNumber);
+        RefreshCurrentPageOcr();
+        NotifyNavigationChanged();
+        OnPropertyChanged(nameof(CurrentPageNumber));
+        ContinuousReadingPageRequested?.Invoke(pageNumber);
+    }
+
     [RelayCommand]
     private async Task ZoomInAsync()
     {
@@ -1782,6 +1814,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         RefreshBookmarkDisplayTree();
         RefreshCurrentPageOcr();
+        RefreshReadingPageOcr();
     }
 
     private async Task<bool> RestorePdfReaderMetadataAsync()
@@ -1901,14 +1934,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         foreach (var bookmark in Bookmarks.SelectMany(EnumerateBookmarkTree))
         {
             bookmark.DisplayChildren.Clear();
+            foreach (var record in OcrHistory
+                         .Where(record => record.BookmarkId == bookmark.Id)
+                         .OrderBy(record => record.CreatedAtUtc))
+            {
+                bookmark.DisplayChildren.Add(record);
+            }
+
             foreach (var child in bookmark.Children)
             {
                 bookmark.DisplayChildren.Add(child);
-            }
-
-            foreach (var record in OcrHistory.Where(record => record.BookmarkId == bookmark.Id))
-            {
-                bookmark.DisplayChildren.Add(record);
             }
         }
     }
@@ -1923,6 +1958,36 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        UpdateReadingPageOcrVisibility();
+    }
+
+    private void RefreshReadingPageOcr()
+    {
+        foreach (var page in ReadingPages)
+        {
+            page.OcrRecords.Clear();
+        }
+
+        foreach (var record in OcrHistory)
+        {
+            if (record.PageNumber < 1 || record.PageNumber > ReadingPages.Count)
+            {
+                continue;
+            }
+
+            record.UpdateDisplayBounds(_zoom);
+            ReadingPages[record.PageNumber - 1].OcrRecords.Add(record);
+        }
+
+        UpdateReadingPageOcrVisibility();
+    }
+
+    private void UpdateReadingPageOcrVisibility()
+    {
+        foreach (var page in ReadingPages)
+        {
+            page.IsOcrVisible = IsCurrentPageOcrVisible && page.PageNumber == _currentPage + 1;
+        }
     }
 
     private void RefreshCurrentPageAnnotations()
@@ -2390,6 +2455,40 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    private Bookmark? FindBookmarkForCurrentPage()
+    {
+        var pageNumber = _currentPage + 1;
+        var candidates = Bookmarks
+            .SelectMany(EnumerateBookmarkTree)
+            .Where(bookmark => bookmark.PageNumber == pageNumber)
+            .ToList();
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        if (SelectedBookmark is not null && candidates.Contains(SelectedBookmark))
+        {
+            return SelectedBookmark;
+        }
+
+        return candidates
+            .OrderByDescending(GetBookmarkDepth)
+            .ThenBy(bookmark => bookmark.SortOrder)
+            .First();
+    }
+
+    private static int GetBookmarkDepth(Bookmark bookmark)
+    {
+        var depth = 0;
+        for (var current = bookmark.Parent; current is not null; current = current.Parent)
+        {
+            depth++;
+        }
+
+        return depth;
+    }
+
     private bool IsBookmarkInCurrentTree(Bookmark bookmark)
     {
         return Bookmarks.Any(root => IsBookmarkInSubtree(root, bookmark));
@@ -2582,6 +2681,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _settingsService.Save(_settings);
 
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
+        AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
         var pagePreviewsWereEnabled = EnablePagePreviews;
         EnablePagePreviews = settings.EnablePagePreviews;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
@@ -2614,7 +2714,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private Task GenerateSpeechAsync() => GenerateSpeechForRecordAsync(SelectedOcrRecord);
 
-    public async Task GenerateSpeechForRecordAsync(OcrRecord? record)
+    public Task GenerateSpeechForRecordAsync(OcrRecord? record) => GenerateSpeechForRecordAsync(record, null, false);
+
+    public Task GenerateSpeechForRecordAsync(OcrRecord? record, string? voiceModelName) =>
+        GenerateSpeechForRecordAsync(record, voiceModelName, false);
+
+    public Task RegenerateSpeechForRecordAsync(OcrRecord? record, string voiceModelName) =>
+        GenerateSpeechForRecordAsync(record, voiceModelName, true);
+
+    private async Task GenerateSpeechForRecordAsync(OcrRecord? record, string? voiceModelName, bool replaceExistingAudio)
     {
         if (record is null || !CanModifyDocument || IsTtsBusy)
         {
@@ -2627,10 +2735,33 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectedOcrRecord = record;
             IsTtsBusy = true;
             StatusMessage = "正在生成语音...";
+            var settings = CreateReaderSettings();
+            if (!string.IsNullOrWhiteSpace(voiceModelName))
+            {
+                if (!settings.TtsVoiceModels.Any(model => string.Equals(model.Name, voiceModelName, StringComparison.Ordinal)))
+                {
+                    StatusMessage = "指定的 Voice Model 不存在或已被移除";
+                    return;
+                }
+
+                settings.TtsVoiceModel = voiceModelName;
+            }
             var audioPath = await _ttsService.GenerateAsync(
                 record.Text,
-                CreateReaderSettings(),
+                settings,
                 record.PageNumber);
+            if (replaceExistingAudio)
+            {
+                foreach (var path in await _ocrRepository.DeleteAudiosAsync(record.Id))
+                {
+                    if (!string.Equals(path, audioPath, StringComparison.OrdinalIgnoreCase))
+                    {
+                        DeleteResource(path);
+                    }
+                }
+
+                record.TtsAudios.Clear();
+            }
             var audio = new TtsAudioRecord
             {
                 OcrRecordId = record.Id,
@@ -2664,6 +2795,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         record.RefreshAudioStatus();
         if (!record.HasAudio)
         {
+            if (!AutoGenerateOcrAudio)
+            {
+                StatusMessage = "该 OCR 记录尚未生成音频，请通过右键菜单选择模型生成";
+                return;
+            }
+
             await GenerateSpeechForRecordAsync(record);
             record.RefreshAudioStatus();
         }
@@ -2746,6 +2883,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
+            AutoGenerateOcrAudio = AutoGenerateOcrAudio,
             OcrCaptureDirectory = OcrCaptureDirectory,
             AudioDirectory = AudioDirectory,
             TtsBaseUrl = TtsBaseUrl,
@@ -2755,6 +2893,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             TtsVoiceModels = CloneVoiceModels(_ttsVoiceModels),
         };
     }
+
+    public IReadOnlyList<TtsVoiceModelOption> GetConfiguredVoiceModels() => _ttsVoiceModels;
 
     private static List<TtsVoiceModelOption> CloneVoiceModels(IEnumerable<TtsVoiceModelOption>? voiceModels)
     {
@@ -2778,9 +2918,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             IsOcrBusy = true;
+            var matchingBookmark = FindBookmarkForCurrentPage();
             var record = new OcrRecord
             {
                 PdfDocumentId = _documentId,
+                BookmarkId = matchingBookmark?.Id,
                 PageNumber = _currentPage + 1,
                 X = _pendingOcrX,
                 Y = _pendingOcrY,
@@ -2799,10 +2941,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectedOcrRecord = record;
             OcrTitle = record.Title;
             RefreshCurrentPageOcr();
+            RefreshReadingPageOcr();
+            RefreshBookmarkDisplayTree();
             GeneratedAudioPath = "尚未生成音频";
             _pendingCapturePath = null;
             HasPendingOcr = false;
-            StatusMessage = "OCR 结果已保存，请选择书签进行挂载";
+            StatusMessage = matchingBookmark is null
+                ? "OCR 结果已保存，请选择书签进行挂载"
+                : $"OCR 结果已保存并挂载到书签：{matchingBookmark.Title}";
         }
         catch (Exception exception)
         {
@@ -3247,6 +3393,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 $"page-{pageIndex + 1:0000}.png");
             ReadingPages.Add(new ReadingPage(pageIndex + 1, size.Width, size.Height, previewPath));
         }
+
+        RefreshReadingPageOcr();
     }
 
     public void ActivateReadingPage(ReadingPage? page)
@@ -3401,6 +3549,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         NotifyNavigationChanged();
         NotifyCaptureChanged();
+        OnPropertyChanged(nameof(IsDocumentReadOnly));
+        OnPropertyChanged(nameof(CanModifyDocument));
         OnPropertyChanged(nameof(CanGenerateSpeech));
         OnPropertyChanged(nameof(CanClearOcr));
         OnPropertyChanged(nameof(CanAnnotate));
@@ -3500,6 +3650,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     partial void OnIsCurrentPageOcrVisibleChanged(bool value)
     {
         OnPropertyChanged(nameof(CurrentPageOcrButtonText));
+        OnPropertyChanged(nameof(IsContinuousReadingMode));
+        if (value)
+        {
+            RefreshReadingPageOcr();
+        }
+        else
+        {
+            UpdateReadingPageOcrVisibility();
+        }
     }
 
     partial void OnSelectedBookmarkChanged(Bookmark? value)
