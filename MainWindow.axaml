@@ -224,7 +224,7 @@
                         Padding="12,7"
                         Content="{Binding AnnotationButtonText}"
                         Command="{Binding ToggleAnnotationCommand}"
-                        IsEnabled="{Binding HasDocument}" />
+                        IsEnabled="{Binding CanModifyDocument}" />
                 <Button Grid.Column="12"
                         Margin="6,0,0,0"
                         Padding="12,7"
@@ -288,9 +288,24 @@
                              SelectionChanged="DocumentSelectionChanged">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="model:PdfDocument">
-                                <StackPanel Spacing="2" Margin="0,3">
-                                    <TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" Foreground="#37414A" FontSize="11" />
-                                </StackPanel>
+                                <Grid Margin="0,3" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                    <TextBlock Grid.Column="0"
+                                               Text="{Binding FilePath}"
+                                               TextWrapping="Wrap"
+                                               Foreground="#37414A"
+                                               FontSize="11" />
+                                    <Border Grid.Column="1"
+                                            Background="#D99A21"
+                                            CornerRadius="3"
+                                            Padding="5,2"
+                                            VerticalAlignment="Top"
+                                            IsVisible="{Binding IsArchived}">
+                                        <TextBlock Text="已归档"
+                                                   FontSize="10"
+                                                   FontWeight="SemiBold"
+                                                   Foreground="White" />
+                                    </Border>
+                                </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
@@ -339,6 +354,7 @@
                                 <Button Grid.Column="1"
                                         Content="+"
                                         Click="CreateBookmarkClick"
+                                        IsEnabled="{Binding CanModifyDocument}"
                                         Width="36"
                                         Height="36"
                                         FontSize="25"

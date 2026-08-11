@@ -88,6 +88,7 @@ public partial class PdfDocumentPickerWindow : Window
     {
         var selected = (DocumentList.SelectedItems ?? Array.Empty<object>())
             .OfType<PdfDocument>()
+            .Concat((ArchivedDocumentList.SelectedItems ?? Array.Empty<object>()).OfType<PdfDocument>())
             .ToList();
         Close(selected);
     }
@@ -159,7 +160,7 @@ public partial class PdfDocumentPickerWindow : Window
         ArchiveButton.IsEnabled = activeSelected > 0;
         RestoreButton.IsEnabled = archivedSelected > 0;
         RemoveButton.IsEnabled = activeSelected + archivedSelected > 0;
-        ImportButton.IsEnabled = activeSelected > 0;
+        ImportButton.IsEnabled = activeSelected + archivedSelected > 0;
     }
 
     private void UpdateDocumentPanelLayout()

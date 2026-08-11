@@ -252,7 +252,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task DeleteOcrRecordAsync(OcrRecord? record)
     {
-        if (record is null || !HasDocument || IsBusy || IsOcrBusy || IsTtsBusy)
+        if (record is null || !CanModifyDocument || IsBusy || IsOcrBusy || IsTtsBusy)
         {
             return;
         }
@@ -290,19 +290,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanGoPrevious => HasDocument && _currentPage > 0 && !IsBusy;
     public bool CanGoNext => HasDocument && _currentPage < _pdfService.PageCount - 1 && !IsBusy;
     public bool CanCancelOcr => IsOcrBusy || HasPendingOcr;
-    public bool CanSelectCaptureMode => HasDocument && IsOcrEnabled && !IsBusy && !IsOcrBusy;
+    public bool CanSelectCaptureMode => HasDocument && IsOcrEnabled && !IsBusy && !IsOcrBusy && !IsDocumentReadOnly;
     public bool CanCapture => CanSelectCaptureMode && (_captureOnce || IsContinuousCapture);
     public bool CanCancelCapture => (_captureOnce || IsContinuousCapture) && !IsOcrBusy;
     public bool HasSelectedBookmark => SelectedBookmark is not null;
     public bool CanAttachOcr => SelectedBookmark is not null
         && SelectedOcrRecord is not null
-        && !IsBusy
+        && !IsBusy && !IsDocumentReadOnly
         && !IsOcrBusy;
-    public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is not null && !IsTtsBusy;
+    public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is not null && !IsTtsBusy && !IsDocumentReadOnly;
     public bool CanClearOcr => HasDocument && SelectedOcrRecord is not null
-        && !IsBusy && !IsOcrBusy && !IsTtsBusy;
+        && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsDocumentReadOnly;
     public bool CanAnnotate => HasDocument && IsAnnotationMode
-        && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsReadingCurrentPage;
+        && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsReadingCurrentPage && !IsDocumentReadOnly;
     public bool CanReadCurrentPage => HasDocument
         && (IsReadingCurrentPage
             || IsAudioPlaying
@@ -317,7 +317,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         ? "-"
         : $"{SelectedPdfAnnotation.StrokeWidth:0.##} pt";
     public bool HasPendingAnnotationChanges => _pendingAnnotationChanges.Count > 0;
-    public bool CanSaveAnnotations => HasDocument && HasPendingAnnotationChanges && !IsBusy;
+    public bool IsDocumentReadOnly => HasDocument && SelectedDocument?.IsArchived == true;
+    public bool CanModifyDocument => HasDocument && !IsDocumentReadOnly;
+    public bool CanSaveAnnotations => HasDocument && HasPendingAnnotationChanges && !IsBusy && !IsDocumentReadOnly;
     public int CurrentPageNumber => _currentPage + 1;
     public double CurrentZoom => _zoom;
     public int DocumentPageCount => Math.Max(1, _pdfService.PageCount);
@@ -380,7 +382,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ToggleAnnotation()
     {
-        if (!HasDocument || IsBusy)
+        if (!CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -411,7 +413,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public void SelectAnnotationTool(AnnotationTool tool)
     {
-        if (!HasDocument || IsBusy)
+        if (!CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -1051,7 +1053,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task SavePdfAsync()
     {
-        if (!HasDocument || IsBusy)
+        if (!CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -1095,7 +1097,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task SavePdfAsAsync(string outputPath)
     {
-        if (!HasDocument || IsBusy || string.IsNullOrWhiteSpace(outputPath))
+        if (!CanModifyDocument || IsBusy || string.IsNullOrWhiteSpace(outputPath))
         {
             return;
         }
@@ -1271,7 +1273,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void StartOcr()
     {
-        if (IsOcrEnabled)
+        if (IsOcrEnabled || IsDocumentReadOnly)
         {
             return;
         }
@@ -1389,7 +1391,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var imported = new List<PdfDocument>();
         foreach (var document in documents)
         {
-            var available = AvailableDocuments.SingleOrDefault(item => item.Id == document.Id);
+            var available = AvailableDocuments.Concat(ArchivedDocuments).SingleOrDefault(item => item.Id == document.Id);
             if (available is null)
             {
                 continue;
@@ -1507,7 +1509,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             AvailableDocuments.Remove(document);
             ArchivedDocuments.Remove(document);
             (archived ? ArchivedDocuments : AvailableDocuments).Insert(0, document);
-            StatusMessage = archived ? "PDF 已归档" : "PDF 已恢复到正在使用";
+            if (document.Id == _documentId)
+            {
+                if (archived)
+                {
+                    CancelCaptureMode();
+                    IsAnnotationMode = false;
+                }
+                NotifyDocumentReadOnlyChanged();
+            }
+            StatusMessage = archived ? "PDF 已归档，当前工作区为只读模式" : "PDF 已恢复到正在使用，可继续编辑";
         }
         catch (Exception exception)
         {
@@ -1878,7 +1889,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task CreateBookmarkAsync(string? title, int pageNumber)
     {
-        if (!HasDocument || IsBusy)
+        if (!CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -1970,7 +1981,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task AttachOcrToBookmarkAsync()
     {
-        if (SelectedBookmark is null || SelectedOcrRecord is null || !HasDocument || IsBusy)
+        if (SelectedBookmark is null || SelectedOcrRecord is null || !CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -2036,7 +2047,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task RenameBookmarkAsync(Bookmark? bookmark, string? title)
     {
-        if (bookmark is null || !HasDocument || IsBusy)
+        if (bookmark is null || !CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -2149,7 +2160,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task DeleteBookmarkAsync(Bookmark? bookmark)
     {
-        if (bookmark is null || !HasDocument || IsBusy)
+        if (bookmark is null || !CanModifyDocument || IsBusy)
         {
             return;
         }
@@ -2493,7 +2504,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task GenerateSpeechForRecordAsync(OcrRecord? record)
     {
-        if (record is null || !HasDocument || IsTtsBusy)
+        if (record is null || !CanModifyDocument || IsTtsBusy)
         {
             StatusMessage = "请先选择已保存的 OCR 记录。";
             return;
@@ -2647,7 +2658,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SaveOcrAsync()
     {
-        if (!HasPendingOcr || string.IsNullOrWhiteSpace(OcrText) || !HasDocument)
+        if (!HasPendingOcr || string.IsNullOrWhiteSpace(OcrText) || !CanModifyDocument)
         {
             return;
         }
@@ -3140,6 +3151,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(HasSelectedBookmark));
         OnPropertyChanged(nameof(CanAttachOcr));
     }
+
+    private void NotifyDocumentReadOnlyChanged()
+    {
+        OnPropertyChanged(nameof(IsDocumentReadOnly));
+        OnPropertyChanged(nameof(CanModifyDocument));
+        OnPropertyChanged(nameof(CanGenerateSpeech));
+        OnPropertyChanged(nameof(CanClearOcr));
+        OnPropertyChanged(nameof(CanAnnotate));
+        OnPropertyChanged(nameof(CanSaveAnnotations));
+        NotifyCaptureChanged();
+        NotifyBookmarkChanged();
+    }
+
+    partial void OnSelectedDocumentChanged(PdfDocument? value) => NotifyDocumentReadOnlyChanged();
+
     partial void OnHasPendingOcrChanged(bool value) => OnPropertyChanged(nameof(CanCancelOcr));
     partial void OnIsOcrEnabledChanged(bool value) => NotifyCaptureChanged();
     partial void OnIsContinuousCaptureChanged(bool value) => NotifyCaptureChanged();
