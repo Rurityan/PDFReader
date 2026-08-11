@@ -1,0 +1,25 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.AnnotationUnsavedChangesWindow"
+        Title="未保存的标注"
+        Width="500"
+        Height="230"
+        MinWidth="440"
+        MinHeight="210"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="*,Auto" Background="#F5F6F8">
+        <StackPanel Grid.Row="0" Spacing="12" Margin="24">
+            <TextBlock Text="存在未保存的标注" FontSize="18" FontWeight="SemiBold" Foreground="#303943" />
+            <TextBlock Text="当前标注只保存在阅读器缓存中，尚未写入 PDF 文件。关闭应用前是否保存？"
+                       TextWrapping="Wrap"
+                       Foreground="#4A5560" />
+        </StackPanel>
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,1,0,0" Padding="24,14">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="取消关闭" Click="CancelClick" Padding="14,8" />
+                <Button Content="放弃变更" Click="DiscardClick" Padding="14,8" />
+                <Button Content="保存标注并退出" Click="SaveClick" Padding="14,8" Background="#2B6CB0" Foreground="White" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

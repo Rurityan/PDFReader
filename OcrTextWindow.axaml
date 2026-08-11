@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.OcrTextWindow"
+        Title="OCR 正文"
+        Width="620"
+        Height="460"
+        MinWidth="440"
+        MinHeight="320"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,*,Auto" Background="#F5F6F8" Margin="20">
+        <TextBlock x:Name="TitleText"
+                   FontSize="16"
+                   FontWeight="SemiBold"
+                   Foreground="#303943"
+                   TextWrapping="Wrap" />
+        <TextBox x:Name="BodyText"
+                 Grid.Row="1"
+                 Margin="0,14"
+                 IsReadOnly="True"
+                 AcceptsReturn="True"
+                 TextWrapping="Wrap" />
+        <Button Grid.Row="2"
+                Content="关闭"
+                Click="CloseClick"
+                Padding="14,7"
+                HorizontalAlignment="Right" />
+    </Grid>
+</Window>

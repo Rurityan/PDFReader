@@ -47,6 +47,8 @@ public sealed class ReaderDbContext : DbContext
         modelBuilder.Entity<OcrRecord>(entity =>
         {
             entity.HasKey(record => record.Id);
+            entity.Property(record => record.CaptureZoom).IsRequired();
+            entity.Property(record => record.Title).IsRequired();
             entity.Property(record => record.Text).IsRequired();
             entity.HasOne(record => record.PdfDocument)
                 .WithMany(document => document.OcrRecords)

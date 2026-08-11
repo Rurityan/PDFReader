@@ -47,7 +47,9 @@ public sealed class ReaderDbContextFactory
             command.CommandText = """
                 SELECT
                     EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'),
-                    EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'PdfDocuments');
+                    EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'PdfDocuments')
+                        AND EXISTS(SELECT 1 FROM pragma_table_info('OcrRecords') WHERE name = 'Title')
+                        AND EXISTS(SELECT 1 FROM pragma_table_info('OcrRecords') WHERE name = 'CaptureZoom');
                 """;
             using var reader = command.ExecuteReader();
             reader.Read();

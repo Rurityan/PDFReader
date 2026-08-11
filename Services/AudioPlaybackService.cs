@@ -1,5 +1,7 @@
 using System;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using LibVLCSharp.Shared;
 
 namespace PDFReader.Services;
@@ -21,6 +23,41 @@ public sealed class AudioPlaybackService : IDisposable
         _media?.Dispose();
         _media = new Media(_libVlc!, new Uri(filePath));
         _mediaPlayer!.Play(_media);
+    }
+
+    public async Task PlayAndWaitAsync(
+        string filePath,
+        CancellationToken cancellationToken = default)
+    {
+        if (!File.Exists(filePath))
+        {
+            throw new FileNotFoundException("找不到音频文件。", filePath);
+        }
+
+        EnsureInitialized();
+        var completion = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        EventHandler<EventArgs>? endReached = null;
+        endReached = (_, _) => completion.TrySetResult(true);
+        _mediaPlayer!.EndReached += endReached;
+
+        using var cancellationRegistration = cancellationToken.Register(() =>
+        {
+            _mediaPlayer.Stop();
+            completion.TrySetCanceled(cancellationToken);
+        });
+
+        try
+        {
+            _media?.Dispose();
+            _media = new Media(_libVlc!, new Uri(filePath));
+            _mediaPlayer.Play(_media);
+            await completion.Task;
+        }
+        finally
+        {
+            _mediaPlayer.EndReached -= endReached;
+        }
     }
 
     public void Stop()

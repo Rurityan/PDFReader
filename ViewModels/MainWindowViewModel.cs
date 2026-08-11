@@ -20,15 +20,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly SettingsService _settingsService = new();
     private readonly TtsService _ttsService = new();
     private readonly AudioPlaybackService _audioPlaybackService = new();
+    private readonly PdfEditingService _pdfEditingService = new();
     private readonly PdfDocumentRepository _documentRepository = new();
     private OcrResultRepository _ocrRepository;
     private BookmarkRepository _bookmarkRepository;
     private ReaderSettings _settings;
     private Guid _documentId;
     private CancellationTokenSource? _ocrCancellation;
+    private CancellationTokenSource? _readingCancellation;
     private Bitmap? _pageImage;
     private int _currentPage;
     private double _zoom = 1.25;
+    private readonly List<PdfAnnotationChange> _pendingAnnotationChanges = new();
 
     [ObservableProperty]
     private string _documentTitle = "未打开文档";
@@ -58,6 +61,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private string _ocrText = "选择当前页面后开始 OCR。";
 
     [ObservableProperty]
+    private string _ocrTitle = string.Empty;
+
+    [ObservableProperty]
     private string _lastCapturePath = "尚未生成选区截图";
 
     [ObservableProperty]
@@ -69,6 +75,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isContinuousCapture;
 
+    [ObservableProperty]
+    private bool _isAnnotationMode;
+
+    [ObservableProperty]
+    private bool _isReadingCurrentPage;
+
+    [ObservableProperty]
+    private AnnotationTool _annotationTool = AnnotationTool.Text;
+
     private bool _captureOnce;
 
     [ObservableProperty]
@@ -78,6 +93,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private double _pendingOcrY;
     private double _pendingOcrWidth;
     private double _pendingOcrHeight;
+    private double _pendingOcrZoom;
     private string? _pendingCapturePath;
 
     [ObservableProperty]
@@ -108,20 +124,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _isTtsBusy;
 
     [ObservableProperty]
-    private string _bookmarkTitle = string.Empty;
+    private bool _isCurrentPageOcrVisible;
 
     [ObservableProperty]
     private Bookmark? _selectedBookmark;
 
     [ObservableProperty]
-    private string _selectedBookmarkTitle = string.Empty;
+    private object? _selectedTreeItem;
 
     [ObservableProperty]
     private OcrRecord? _selectedOcrRecord;
 
+    [ObservableProperty]
+    private OcrRecord? _selectedOcrHistoryRecord;
+
     private readonly Stack<DeletedBookmarkOperation> _deletedBookmarkHistory = new();
 
     public ObservableCollection<OcrRecord> OcrHistory { get; } = new();
+    public ObservableCollection<OcrRecord> CurrentPageOcrRecords { get; } = new();
+    public ObservableCollection<PdfAnnotationInfo> CurrentPageAnnotations { get; } = new();
     public ObservableCollection<Bookmark> Bookmarks { get; } = new();
     public ObservableCollection<PdfDocument> Documents { get; } = new();
 
@@ -165,6 +186,42 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public void SetStatus(string message) => StatusMessage = message;
 
+    public void ClearOcrHistorySelection()
+    {
+        SelectedOcrHistoryRecord = null;
+    }
+
+    public async Task DeleteOcrRecordAsync(OcrRecord? record)
+    {
+        if (record is null || !HasDocument || IsBusy || IsOcrBusy || IsTtsBusy)
+        {
+            return;
+        }
+
+        try
+        {
+            DeleteResources(await _ocrRepository.DeleteAsync(record.Id));
+            OcrHistory.Remove(record);
+            if (ReferenceEquals(SelectedOcrRecord, record))
+            {
+                SelectedOcrRecord = null;
+            }
+
+            if (ReferenceEquals(SelectedOcrHistoryRecord, record))
+            {
+                SelectedOcrHistoryRecord = null;
+            }
+
+            RefreshBookmarkDisplayTree();
+            RefreshCurrentPageOcr();
+            StatusMessage = "OCR 记录及其音频资源已删除";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"删除 OCR 记录失败: {exception.Message}";
+        }
+    }
+
     public Bitmap? PageImage
     {
         get => _pageImage;
@@ -183,7 +240,733 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         && !IsBusy
         && !IsOcrBusy;
     public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is not null && !IsTtsBusy;
+    public bool CanClearOcr => HasDocument && SelectedOcrRecord is not null
+        && !IsBusy && !IsOcrBusy && !IsTtsBusy;
+    public bool CanAnnotate => HasDocument && IsAnnotationMode
+        && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsReadingCurrentPage;
+    public bool CanReadCurrentPage => HasDocument
+        && (IsReadingCurrentPage
+            || (!IsBusy && !IsTtsBusy && !IsAnnotationMode
+                && CurrentPageOcrRecords.Any(record => record.HasAudio)));
     public bool CanUndoBookmarkDelete => _deletedBookmarkHistory.Count > 0 && !IsBusy;
+    public bool HasPendingAnnotationChanges => _pendingAnnotationChanges.Count > 0;
+    public bool CanSaveAnnotations => HasDocument && HasPendingAnnotationChanges && !IsBusy;
+    public int CurrentPageNumber => _currentPage + 1;
+    public double CurrentZoom => _zoom;
+    public int DocumentPageCount => Math.Max(1, _pdfService.PageCount);
+    public string CurrentPageOcrButtonText => IsCurrentPageOcrVisible
+        ? "隐藏当前页 OCR"
+        : "显示当前页 OCR";
+    public string AnnotationButtonText => IsAnnotationMode ? "取消标注" : "标注";
+    public string AnnotationToolText => AnnotationTool switch
+    {
+        AnnotationTool.Line => "画线",
+        AnnotationTool.Freehand => "自由绘制",
+        AnnotationTool.Rectangle => "方框",
+        AnnotationTool.Highlight => "高亮",
+        AnnotationTool.Eraser => "橡皮擦",
+        _ => "文本标注",
+    };
+    public string ReadCurrentPageButtonText => IsReadingCurrentPage ? "停止朗读" : "朗读";
+
+    [RelayCommand]
+    private void ToggleCurrentPageOcr()
+    {
+        if (!HasDocument)
+        {
+            return;
+        }
+
+        IsCurrentPageOcrVisible = !IsCurrentPageOcrVisible;
+        StatusMessage = IsCurrentPageOcrVisible
+            ? $"已显示第 {_currentPage + 1} 页的 {CurrentPageOcrRecords.Count} 条 OCR"
+            : "已隐藏当前页 OCR 框";
+    }
+
+    [RelayCommand]
+    private void ToggleAnnotation()
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        if (IsAnnotationMode)
+        {
+            IsAnnotationMode = false;
+            StatusMessage = "标注模式已取消";
+        }
+        else
+        {
+            CancelCaptureMode();
+            IsAnnotationMode = true;
+            AnnotationTool = AnnotationTool.Text;
+            StatusMessage = "标注模式已开启，请框选要添加标注的区域";
+        }
+    }
+
+    public void SelectAnnotationTool(AnnotationTool tool)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        CancelCaptureMode();
+        IsAnnotationMode = true;
+        AnnotationTool = tool;
+        StatusMessage = tool switch
+        {
+            AnnotationTool.Eraser => "橡皮擦已开启，请沿标注拖动擦除",
+            AnnotationTool.Freehand => "自由绘制已开启，可连续绘制",
+            _ => $"已选择{AnnotationToolText}，请在页面上框选区域",
+        };
+    }
+
+    public void CancelAnnotationMode()
+    {
+        if (IsAnnotationMode)
+        {
+            IsAnnotationMode = false;
+            StatusMessage = "标注已取消";
+        }
+    }
+
+    [RelayCommand]
+    private async Task ToggleReadCurrentPageAsync()
+    {
+        if (IsReadingCurrentPage)
+        {
+            _readingCancellation?.Cancel();
+            return;
+        }
+
+        await ReadCurrentPageAsync();
+    }
+
+    public async Task ReadCurrentPageAsync()
+    {
+        if (!HasDocument || IsBusy || IsAnnotationMode)
+        {
+            return;
+        }
+
+        var records = CurrentPageOcrRecords
+            .Select(record =>
+            {
+                record.RefreshAudioStatus();
+                return record;
+            })
+            .Where(record => record.HasAudio && !string.IsNullOrWhiteSpace(record.LatestAudioPath))
+            .ToList();
+        if (records.Count == 0)
+        {
+            StatusMessage = "当前页没有可播放的 OCR 音频";
+            OnPropertyChanged(nameof(CanReadCurrentPage));
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _readingCancellation = cancellation;
+        IsReadingCurrentPage = true;
+        StatusMessage = $"正在朗读当前页的 {records.Count} 条 OCR";
+        try
+        {
+            foreach (var record in records)
+            {
+                cancellation.Token.ThrowIfCancellationRequested();
+                GeneratedAudioPath = record.LatestAudioPath!;
+                await _audioPlaybackService.PlayAndWaitAsync(
+                    record.LatestAudioPath!,
+                    cancellation.Token);
+            }
+
+            StatusMessage = "当前页朗读完成";
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "朗读已停止";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"朗读失败: {exception.Message}";
+        }
+        finally
+        {
+            if (ReferenceEquals(_readingCancellation, cancellation))
+            {
+                _readingCancellation = null;
+            }
+
+            cancellation.Dispose();
+            IsReadingCurrentPage = false;
+        }
+    }
+
+    public Task AddAnnotationAsync(
+        double x,
+        double y,
+        double width,
+        double height,
+        string title,
+        string contents)
+    {
+        if (!HasDocument || IsBusy || string.IsNullOrWhiteSpace(contents))
+        {
+            return Task.CompletedTask;
+        }
+
+        QueueAnnotation(new PdfAnnotationInfo
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PageNumber = _currentPage + 1,
+            Type = PdfAnnotationType.Text,
+            Title = string.IsNullOrWhiteSpace(title) ? "PDF Reader" : title.Trim(),
+            Contents = contents.Trim(),
+            X = x / _zoom,
+            Y = y / _zoom,
+            Width = width / _zoom,
+            Height = height / _zoom,
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task AddLineAnnotationAsync(double startX, double startY, double endX, double endY)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return Task.CompletedTask;
+        }
+
+        QueueAnnotation(new PdfAnnotationInfo
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PageNumber = _currentPage + 1,
+            Type = PdfAnnotationType.Line,
+            X = Math.Min(startX, endX) / _zoom,
+            Y = Math.Min(startY, endY) / _zoom,
+            Width = Math.Max(1, Math.Abs(endX - startX) / _zoom),
+            Height = Math.Max(1, Math.Abs(endY - startY) / _zoom),
+            StartX = startX / _zoom,
+            StartY = startY / _zoom,
+            EndX = endX / _zoom,
+            EndY = endY / _zoom,
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task AddHighlightAnnotationAsync(double x, double y, double width, double height)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return Task.CompletedTask;
+        }
+
+        QueueAnnotation(new PdfAnnotationInfo
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PageNumber = _currentPage + 1,
+            Type = PdfAnnotationType.Highlight,
+            X = x / _zoom,
+            Y = y / _zoom,
+            Width = width / _zoom,
+            Height = height / _zoom,
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task AddRectangleAnnotationAsync(double x, double y, double width, double height)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return Task.CompletedTask;
+        }
+
+        QueueAnnotation(new PdfAnnotationInfo
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PageNumber = _currentPage + 1,
+            Type = PdfAnnotationType.Rectangle,
+            X = x / _zoom,
+            Y = y / _zoom,
+            Width = width / _zoom,
+            Height = height / _zoom,
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task AddFreehandAnnotationAsync(IReadOnlyList<PdfAnnotationPoint> points)
+    {
+        if (!HasDocument || IsBusy || points.Count < 2)
+        {
+            return Task.CompletedTask;
+        }
+
+        var pdfPoints = points
+            .Select(point => new PdfAnnotationPoint(point.X / _zoom, point.Y / _zoom))
+            .ToArray();
+        var left = pdfPoints.Min(point => point.X);
+        var right = pdfPoints.Max(point => point.X);
+        var top = pdfPoints.Min(point => point.Y);
+        var bottom = pdfPoints.Max(point => point.Y);
+        QueueAnnotation(new PdfAnnotationInfo
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            PageNumber = _currentPage + 1,
+            Type = PdfAnnotationType.Freehand,
+            X = left,
+            Y = top,
+            Width = Math.Max(1, right - left),
+            Height = Math.Max(1, bottom - top),
+            StartX = pdfPoints[0].X,
+            StartY = pdfPoints[0].Y,
+            EndX = pdfPoints[^1].X,
+            EndY = pdfPoints[^1].Y,
+            Points = pdfPoints,
+        });
+        return Task.CompletedTask;
+    }
+
+    public Task DeleteAnnotationAsync(PdfAnnotationInfo? annotation)
+    {
+        if (!HasDocument || IsBusy || annotation is null)
+        {
+            return Task.CompletedTask;
+        }
+
+        QueueAnnotationDeletion(annotation);
+
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "标注删除已暂存，请保存标注写入 PDF";
+        NotifyAnnotationSaveChanged();
+        return Task.CompletedTask;
+    }
+
+    public Task EraseAnnotationsAsync(IReadOnlyList<PdfAnnotationPoint> eraserPath)
+    {
+        if (!HasDocument || IsBusy || eraserPath.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var path = eraserPath
+            .Select(point => new PdfAnnotationPoint(point.X / _zoom, point.Y / _zoom))
+            .ToArray();
+        var erased = 0;
+        foreach (var annotation in CurrentPageAnnotations.ToList())
+        {
+            if (AnnotationIntersectsEraser(annotation, path))
+            {
+                erased += QueueAnnotationDeletion(annotation) ? 1 : 0;
+            }
+        }
+
+        if (erased > 0)
+        {
+            RefreshCurrentPageAnnotations();
+            StatusMessage = $"已暂存擦除 {erased} 个标注，请保存标注写入 PDF";
+            NotifyAnnotationSaveChanged();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private bool QueueAnnotationDeletion(PdfAnnotationInfo annotation)
+    {
+        var pendingAdd = _pendingAnnotationChanges.FirstOrDefault(change =>
+            change.Kind == PdfAnnotationChangeKind.Add
+            && change.Annotation.Id == annotation.Id);
+        if (pendingAdd is not null)
+        {
+            _pendingAnnotationChanges.Remove(pendingAdd);
+            return true;
+        }
+
+        if (_pendingAnnotationChanges.Any(change =>
+                change.Kind == PdfAnnotationChangeKind.Delete
+                && change.Annotation.Id == annotation.Id))
+        {
+            return false;
+        }
+
+        _pendingAnnotationChanges.Add(new PdfAnnotationChange(
+            PdfAnnotationChangeKind.Delete,
+            annotation));
+        return true;
+    }
+
+    private static bool AnnotationIntersectsEraser(
+        PdfAnnotationInfo annotation,
+        IReadOnlyList<PdfAnnotationPoint> path)
+    {
+        const double tolerance = 7;
+        if (annotation.Type is PdfAnnotationType.Line or PdfAnnotationType.Freehand)
+        {
+            var points = annotation.Type == PdfAnnotationType.Freehand
+                ? annotation.Points
+                : new[]
+                {
+                    new PdfAnnotationPoint(annotation.StartX, annotation.StartY),
+                    new PdfAnnotationPoint(annotation.EndX, annotation.EndY),
+                };
+            if (path.Count == 1)
+            {
+                return Enumerable.Range(1, Math.Max(0, points.Count - 1))
+                    .Any(segmentIndex => DistanceToSegment(
+                        path[0], points[segmentIndex - 1], points[segmentIndex]) <= tolerance);
+            }
+
+            for (var segmentIndex = 1; segmentIndex < points.Count; segmentIndex++)
+            {
+                for (var pathIndex = 1; pathIndex < path.Count; pathIndex++)
+                {
+                    if (SegmentsNear(points[segmentIndex - 1], points[segmentIndex],
+                            path[pathIndex - 1], path[pathIndex], tolerance))
+                    {
+                        return true;
+                    }
+                }
+            }
+
+            return false;
+        }
+
+        return path.Any(point => point.X >= annotation.X - tolerance
+            && point.X <= annotation.X + annotation.Width + tolerance
+            && point.Y >= annotation.Y - tolerance
+            && point.Y <= annotation.Y + annotation.Height + tolerance);
+    }
+
+    private static bool SegmentsNear(
+        PdfAnnotationPoint firstStart,
+        PdfAnnotationPoint firstEnd,
+        PdfAnnotationPoint secondStart,
+        PdfAnnotationPoint secondEnd,
+        double tolerance)
+    {
+        return SegmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)
+            || DistanceToSegment(firstStart, secondStart, secondEnd) <= tolerance
+            || DistanceToSegment(firstEnd, secondStart, secondEnd) <= tolerance
+            || DistanceToSegment(secondStart, firstStart, firstEnd) <= tolerance
+            || DistanceToSegment(secondEnd, firstStart, firstEnd) <= tolerance;
+    }
+
+    private static bool SegmentsIntersect(
+        PdfAnnotationPoint firstStart,
+        PdfAnnotationPoint firstEnd,
+        PdfAnnotationPoint secondStart,
+        PdfAnnotationPoint secondEnd)
+    {
+        static double Cross(PdfAnnotationPoint a, PdfAnnotationPoint b, PdfAnnotationPoint c)
+        {
+            return (b.X - a.X) * (c.Y - a.Y) - (b.Y - a.Y) * (c.X - a.X);
+        }
+
+        var first = Cross(firstStart, firstEnd, secondStart);
+        var second = Cross(firstStart, firstEnd, secondEnd);
+        var third = Cross(secondStart, secondEnd, firstStart);
+        var fourth = Cross(secondStart, secondEnd, firstEnd);
+        return ((first > 0 && second < 0) || (first < 0 && second > 0))
+            && ((third > 0 && fourth < 0) || (third < 0 && fourth > 0));
+    }
+
+    private static double DistanceToSegment(
+        PdfAnnotationPoint point,
+        PdfAnnotationPoint segmentStart,
+        PdfAnnotationPoint segmentEnd)
+    {
+        var dx = segmentEnd.X - segmentStart.X;
+        var dy = segmentEnd.Y - segmentStart.Y;
+        if (dx == 0 && dy == 0)
+        {
+            return Math.Sqrt(Math.Pow(point.X - segmentStart.X, 2)
+                + Math.Pow(point.Y - segmentStart.Y, 2));
+        }
+
+        var projection = ((point.X - segmentStart.X) * dx + (point.Y - segmentStart.Y) * dy)
+            / (dx * dx + dy * dy);
+        projection = Math.Clamp(projection, 0, 1);
+        var nearestX = segmentStart.X + projection * dx;
+        var nearestY = segmentStart.Y + projection * dy;
+        return Math.Sqrt(Math.Pow(point.X - nearestX, 2) + Math.Pow(point.Y - nearestY, 2));
+    }
+
+    private void QueueAnnotation(PdfAnnotationInfo annotation)
+    {
+        _pendingAnnotationChanges.Add(new PdfAnnotationChange(
+            PdfAnnotationChangeKind.Add,
+            annotation));
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "标注已暂存，当前预览已更新；请保存标注写入 PDF";
+        NotifyAnnotationSaveChanged();
+    }
+
+    [RelayCommand]
+    public async Task SaveAnnotationsAsync()
+    {
+        if (!CanSaveAnnotations)
+        {
+            return;
+        }
+
+        var documentPath = DocumentPath;
+        var pageIndex = _currentPage;
+        var changes = _pendingAnnotationChanges.ToList();
+        var temporaryPath = $"{documentPath}.{Guid.NewGuid():N}.annotations.tmp.pdf";
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在保存标注...";
+            CloseRenderedDocument();
+            await Task.Run(() =>
+            {
+                _pdfEditingService.SaveCopy(documentPath, temporaryPath);
+                foreach (var change in changes)
+                {
+                    var annotation = change.Annotation;
+                    if (change.Kind == PdfAnnotationChangeKind.Delete)
+                    {
+                        _pdfEditingService.DeleteAnnotation(
+                            temporaryPath,
+                            temporaryPath,
+                            annotation.PageNumber - 1,
+                            annotation.Id);
+                    }
+                    else
+                    {
+                        switch (annotation.Type)
+                        {
+                            case PdfAnnotationType.Text:
+                                _pdfEditingService.AddTextAnnotation(
+                                    temporaryPath,
+                                    temporaryPath,
+                                    annotation.PageNumber - 1,
+                                    annotation.X,
+                                    annotation.Y,
+                                    annotation.Width,
+                                    annotation.Height,
+                                    1,
+                                    annotation.Title ?? "PDF Reader",
+                                    annotation.Contents ?? string.Empty,
+                                    annotation.Id);
+                                break;
+                            case PdfAnnotationType.Line:
+                                _pdfEditingService.AddLineAnnotation(
+                                    temporaryPath,
+                                    temporaryPath,
+                                    annotation.PageNumber - 1,
+                                    annotation.StartX,
+                                    annotation.StartY,
+                                    annotation.EndX,
+                                    annotation.EndY,
+                                    1,
+                                    annotation.Id);
+                                break;
+                            case PdfAnnotationType.Highlight:
+                                _pdfEditingService.AddHighlightAnnotation(
+                                    temporaryPath,
+                                    temporaryPath,
+                                    annotation.PageNumber - 1,
+                                    annotation.X,
+                                    annotation.Y,
+                                    annotation.Width,
+                                    annotation.Height,
+                                    1,
+                                    annotation.Id);
+                                break;
+                            case PdfAnnotationType.Rectangle:
+                                _pdfEditingService.AddRectangleAnnotation(
+                                    temporaryPath,
+                                    temporaryPath,
+                                    annotation.PageNumber - 1,
+                                    annotation.X,
+                                    annotation.Y,
+                                    annotation.Width,
+                                    annotation.Height,
+                                    1,
+                                    annotation.Id);
+                                break;
+                            case PdfAnnotationType.Freehand:
+                                _pdfEditingService.AddFreehandAnnotation(
+                                    temporaryPath,
+                                    temporaryPath,
+                                    annotation.PageNumber - 1,
+                                    annotation.Points,
+                                    1,
+                                    annotation.Id);
+                                break;
+                        }
+                    }
+                }
+
+                File.Move(temporaryPath, documentPath, true);
+            });
+            _pendingAnnotationChanges.Clear();
+            await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            StatusMessage = "标注已保存到 PDF";
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            }
+            catch
+            {
+            }
+
+            StatusMessage = $"保存标注失败: {exception.Message}";
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
+            {
+                try
+                {
+                    File.Delete(temporaryPath);
+                }
+                catch
+                {
+                }
+            }
+
+            IsBusy = false;
+            NotifyNavigationChanged();
+            NotifyAnnotationSaveChanged();
+        }
+    }
+
+    public void DiscardPendingAnnotations()
+    {
+        if (_pendingAnnotationChanges.Count == 0)
+        {
+            return;
+        }
+
+        _pendingAnnotationChanges.Clear();
+        RefreshCurrentPageAnnotations();
+        StatusMessage = "已放弃未保存的标注变更";
+        NotifyAnnotationSaveChanged();
+    }
+
+    private void NotifyAnnotationSaveChanged()
+    {
+        OnPropertyChanged(nameof(HasPendingAnnotationChanges));
+        OnPropertyChanged(nameof(CanSaveAnnotations));
+    }
+
+    public async Task SavePdfAsync()
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        if (HasPendingAnnotationChanges)
+        {
+            StatusMessage = "请先保存或放弃缓存中的标注变更";
+            return;
+        }
+
+        var documentPath = DocumentPath;
+        var pageIndex = _currentPage;
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在保存 PDF...";
+            CloseRenderedDocument();
+            await Task.Run(() => _pdfEditingService.SaveCopy(documentPath, documentPath));
+            await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            StatusMessage = "PDF 已保存";
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            }
+            catch
+            {
+            }
+
+            StatusMessage = $"保存 PDF 失败: {exception.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            NotifyNavigationChanged();
+        }
+    }
+
+    public async Task SavePdfAsAsync(string outputPath)
+    {
+        if (!HasDocument || IsBusy || string.IsNullOrWhiteSpace(outputPath))
+        {
+            return;
+        }
+
+        if (HasPendingAnnotationChanges)
+        {
+            StatusMessage = "请先保存或放弃缓存中的标注变更，再另存为 PDF";
+            return;
+        }
+
+        var sourcePath = DocumentPath;
+        var destinationPath = Path.GetFullPath(outputPath);
+        var pageIndex = _currentPage;
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在另存为 PDF...";
+            CloseRenderedDocument();
+            await Task.Run(() => _pdfEditingService.SaveCopy(sourcePath, destinationPath));
+            await _documentRepository.RebindAsync(_documentId, destinationPath);
+
+            DocumentPath = destinationPath;
+            DocumentTitle = Path.GetFileName(destinationPath);
+            if (SelectedDocument is not null)
+            {
+                SelectedDocument.FilePath = destinationPath;
+                SelectedDocument.Title = DocumentTitle;
+                SelectedDocument.RefreshPathStatus();
+            }
+
+            await ReopenRenderedDocumentAsync(destinationPath, pageIndex);
+            StatusMessage = "PDF 已另存为并切换到新文件";
+        }
+        catch (Exception exception)
+        {
+            try
+            {
+                await ReopenRenderedDocumentAsync(sourcePath, pageIndex);
+            }
+            catch
+            {
+            }
+
+            StatusMessage = $"另存为 PDF 失败: {exception.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+            NotifyNavigationChanged();
+        }
+    }
+
+    private void CloseRenderedDocument()
+    {
+        _readingCancellation?.Cancel();
+        _audioPlaybackService.Stop();
+        _pdfService.Close();
+        PageImage?.Dispose();
+        PageImage = null;
+    }
+
+    private async Task ReopenRenderedDocumentAsync(string path, int pageIndex)
+    {
+        await _pdfService.OpenAsync(path);
+        await ShowPageAsync(Math.Clamp(pageIndex, 0, Math.Max(0, _pdfService.PageCount - 1)));
+    }
 
     [RelayCommand]
     private async Task GoPreviousAsync()
@@ -422,16 +1205,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task LoadDocumentDataAsync()
     {
+        _pendingAnnotationChanges.Clear();
+        NotifyAnnotationSaveChanged();
         OcrHistory.Clear();
         Bookmarks.Clear();
         _deletedBookmarkHistory.Clear();
         OnPropertyChanged(nameof(CanUndoBookmarkDelete));
+        CurrentPageOcrRecords.Clear();
+        CurrentPageAnnotations.Clear();
+        SelectedTreeItem = null;
         SelectedBookmark = null;
+        SelectedOcrHistoryRecord = null;
         SelectedOcrRecord = null;
 
         var ocrRecords = await _ocrRepository.GetForDocumentAsync(_documentId);
         foreach (var record in ocrRecords)
         {
+            record.RefreshAudioStatus();
             OcrHistory.Add(record);
         }
 
@@ -455,69 +1245,161 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 Bookmarks.Add(bookmark);
             }
         }
+
+        RefreshBookmarkDisplayTree();
+        RefreshCurrentPageOcr();
     }
 
-    [RelayCommand]
-    private void AddBookmark()
+    private void RefreshBookmarkDisplayTree()
     {
-        if (!HasDocument || IsBusy)
+        foreach (var bookmark in Bookmarks.SelectMany(EnumerateBookmarkTree))
         {
-            return;
-        }
+            bookmark.DisplayChildren.Clear();
+            foreach (var child in bookmark.Children)
+            {
+                bookmark.DisplayChildren.Add(child);
+            }
 
-        var bookmark = new Bookmark
-        {
-            PdfDocumentId = _documentId,
-            ParentId = SelectedBookmark?.Id,
-            PageNumber = _currentPage + 1,
-            Title = string.IsNullOrWhiteSpace(BookmarkTitle)
-                ? $"第 {_currentPage + 1} 页"
-                : BookmarkTitle.Trim(),
-            SortOrder = SelectedBookmark is null
-                ? Bookmarks.Count
-                : SelectedBookmark.Children.Count,
-            CreatedAtUtc = DateTime.UtcNow,
-            UpdatedAtUtc = DateTime.UtcNow,
-        };
-        bookmark.Parent = SelectedBookmark;
-        if (SelectedBookmark is null)
-        {
-            Bookmarks.Add(bookmark);
+            foreach (var record in OcrHistory.Where(record => record.BookmarkId == bookmark.Id))
+            {
+                bookmark.DisplayChildren.Add(record);
+            }
         }
-        else
-        {
-            SelectedBookmark.Children.Add(bookmark);
-        }
-
-        SelectedBookmark = bookmark;
-        BookmarkTitle = string.Empty;
-        StatusMessage = "书签已创建，请保存或挂载 OCR";
-        NotifyBookmarkChanged();
     }
 
-    [RelayCommand]
-    private async Task SaveBookmarkAsync()
+    private void RefreshCurrentPageOcr()
     {
-        if (SelectedBookmark is null || !HasDocument || IsBusy)
+        CurrentPageOcrRecords.Clear();
+        foreach (var record in OcrHistory.Where(record => record.PageNumber == _currentPage + 1))
+        {
+            record.UpdateDisplayBounds(_zoom);
+            CurrentPageOcrRecords.Add(record);
+        }
+
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+    }
+
+    private void RefreshCurrentPageAnnotations()
+    {
+        CurrentPageAnnotations.Clear();
+        if (!HasDocument || !File.Exists(DocumentPath))
         {
             return;
         }
 
         try
         {
-            if (string.IsNullOrWhiteSpace(SelectedBookmarkTitle))
+            var deletedIds = _pendingAnnotationChanges
+                .Where(change => change.Kind == PdfAnnotationChangeKind.Delete)
+                .Select(change => change.Annotation.Id)
+                .ToHashSet(StringComparer.Ordinal);
+            var annotations = _pdfEditingService.GetAnnotations(DocumentPath, _currentPage)
+                .Where(annotation => !deletedIds.Contains(annotation.Id))
+                .ToList();
+            annotations.AddRange(_pendingAnnotationChanges
+                .Where(change => change.Kind == PdfAnnotationChangeKind.Add
+                    && change.Annotation.PageNumber == _currentPage + 1)
+                .Select(change => change.Annotation));
+            foreach (var annotation in annotations)
             {
-                SelectedBookmarkTitle = SelectedBookmark.Title;
+                CurrentPageAnnotations.Add(annotation);
             }
-
-            SelectedBookmark.Title = SelectedBookmarkTitle.Trim();
-            await SaveBookmarkAndAncestorsAsync(SelectedBookmark);
-            StatusMessage = "书签已保存";
         }
         catch (Exception exception)
         {
-            StatusMessage = $"保存书签失败: {exception.Message}";
+            StatusMessage = $"读取 PDF 标注失败: {exception.Message}";
         }
+    }
+
+    public async Task CreateBookmarkAsync(string? title, int pageNumber)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        if (pageNumber < 1 || pageNumber > _pdfService.PageCount)
+        {
+            StatusMessage = "书签页码超出当前 PDF 范围";
+            return;
+        }
+
+        var parent = SelectedBookmark;
+        title = title?.Trim();
+
+        var bookmark = new Bookmark
+        {
+            PdfDocumentId = _documentId,
+            ParentId = parent?.Id,
+            PageNumber = pageNumber,
+            Title = string.IsNullOrWhiteSpace(title)
+                ? $"第 {pageNumber} 页"
+                : title,
+            SortOrder = parent is null
+                ? Bookmarks.Count
+                : parent.Children.Count,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow,
+        };
+        bookmark.Parent = parent;
+        if (parent is null)
+        {
+            Bookmarks.Add(bookmark);
+        }
+        else
+        {
+            parent.Children.Add(bookmark);
+        }
+
+        try
+        {
+            await SaveBookmarkAndAncestorsAsync(bookmark);
+            SelectedBookmark = bookmark;
+            RefreshBookmarkDisplayTree();
+            StatusMessage = "书签已创建并自动保存";
+            NotifyBookmarkChanged();
+        }
+        catch (Exception exception)
+        {
+            if (parent is not null)
+            {
+                parent.Children.Remove(bookmark);
+            }
+            else
+            {
+                Bookmarks.Remove(bookmark);
+            }
+
+            bookmark.Parent = null;
+            bookmark.ParentId = null;
+            StatusMessage = $"创建书签失败: {exception.Message}";
+        }
+    }
+
+    public void FindCurrentPageBookmark()
+    {
+        if (!HasDocument)
+        {
+            StatusMessage = "请先打开一个 PDF 文档";
+            return;
+        }
+
+        var bookmark = Bookmarks
+            .SelectMany(EnumerateBookmarkTree)
+            .FirstOrDefault(item => item.PageNumber == CurrentPageNumber);
+        if (bookmark is null)
+        {
+            StatusMessage = $"第 {CurrentPageNumber} 页没有书签";
+            return;
+        }
+
+        for (var parent = bookmark.Parent; parent is not null; parent = parent.Parent)
+        {
+            parent.IsExpanded = true;
+        }
+
+        SelectedBookmark = bookmark;
+        StatusMessage = $"已定位到第 {CurrentPageNumber} 页书签：{bookmark.Title}";
     }
 
     [RelayCommand]
@@ -535,6 +1417,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 SelectedOcrRecord.Id,
                 SelectedBookmark.Id);
             SelectedOcrRecord.BookmarkId = SelectedBookmark.Id;
+            RefreshBookmarkDisplayTree();
             StatusMessage = "OCR 已挂载到书签，书签已自动保存";
             NotifyBookmarkChanged();
         }
@@ -580,7 +1463,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             if (ReferenceEquals(SelectedBookmark, bookmark))
             {
-                SelectedBookmarkTitle = bookmark.Title;
+                SelectedBookmark = bookmark;
             }
 
             StatusMessage = "书签名称已更新";
@@ -616,7 +1499,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             oldSiblings.Remove(dragged);
             if (asChild)
             {
-                target.Children.Add(dragged);
+                newParent!.Children.Add(dragged);
             }
             else
             {
@@ -632,6 +1515,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 await RenumberAndPersistAsync(newSiblings);
             }
 
+            RefreshBookmarkDisplayTree();
             SelectedBookmark = dragged;
             StatusMessage = asChild ? "书签已设为子书签" : "书签已调整为同级书签";
         }
@@ -657,6 +1541,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             Bookmarks.Add(bookmark);
             await RenumberAndPersistAsync(oldParent.Children);
             await RenumberAndPersistAsync(Bookmarks);
+            RefreshBookmarkDisplayTree();
             SelectedBookmark = bookmark;
             StatusMessage = "书签已脱离父书签";
         }
@@ -702,6 +1587,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             bookmark.Parent = null;
             bookmark.ParentId = null;
             await RenumberAndPersistAsync(siblings);
+            RefreshBookmarkDisplayTree();
             _deletedBookmarkHistory.Push(new DeletedBookmarkOperation(
                 bookmark,
                 parent,
@@ -750,6 +1636,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 await SaveBookmarkTreeAsync(operation.Root);
             }
             await RenumberAndPersistAsync(siblings);
+            RefreshBookmarkDisplayTree();
 
             foreach (var attachment in operation.OcrAttachments)
             {
@@ -853,12 +1740,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         var cancellation = BeginOcrCancellation();
+        var captureZoom = _zoom;
         try
         {
             IsOcrBusy = true;
             StatusMessage = "正在识别选区...";
             await using var imageStream = await _pdfService.RenderPageRegionAsync(
-                _currentPage, x, y, width, height, _zoom, cancellation.Token);
+                _currentPage, x, y, width, height, captureZoom, cancellation.Token);
             if (EnableOcrCaptureCache)
             {
                 LastCapturePath = await SaveDebugCaptureAsync(
@@ -879,7 +1767,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 : "正在识别选区...";
             var result = await _ocrService.RecognizeAsync(imageStream, cancellation.Token);
             OcrText = string.IsNullOrWhiteSpace(result.Text) ? "选区内未识别到文本。" : result.Text;
-            SetPendingOcr(x, y, width, height);
+            OcrTitle = CreateDefaultOcrTitle(OcrText);
+            SetPendingOcr(x, y, width, height, captureZoom);
             StatusMessage = $"选区 OCR 完成，识别到 {result.Lines.Count} 行，请确认后保存";
         }
         catch (OperationCanceledException)
@@ -990,9 +1879,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task GenerateSpeechAsync()
+    private Task GenerateSpeechAsync() => GenerateSpeechForRecordAsync(SelectedOcrRecord);
+
+    public async Task GenerateSpeechForRecordAsync(OcrRecord? record)
     {
-        if (!CanGenerateSpeech || SelectedOcrRecord is null)
+        if (record is null || !HasDocument || IsTtsBusy)
         {
             StatusMessage = "请先选择已保存的 OCR 记录。";
             return;
@@ -1000,20 +1891,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         try
         {
+            SelectedOcrRecord = record;
             IsTtsBusy = true;
             StatusMessage = "正在生成语音...";
-            GeneratedAudioPath = await _ttsService.GenerateAsync(
-                SelectedOcrRecord.Text,
+            var audioPath = await _ttsService.GenerateAsync(
+                record.Text,
                 CreateReaderSettings(),
-                SelectedOcrRecord.PageNumber);
+                record.PageNumber);
             var audio = new TtsAudioRecord
             {
-                OcrRecordId = SelectedOcrRecord.Id,
-                FilePath = GeneratedAudioPath,
+                OcrRecordId = record.Id,
+                FilePath = audioPath,
                 CreatedAtUtc = DateTime.UtcNow,
             };
             await _ocrRepository.AddAudioAsync(audio);
-            SelectedOcrRecord.TtsAudios.Add(audio);
+            record.TtsAudios.Add(audio);
+            record.RefreshAudioStatus();
+            GeneratedAudioPath = record.LatestAudioPath ?? audioPath;
             StatusMessage = "语音生成完成";
         }
         catch (Exception exception)
@@ -1023,6 +1917,54 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         finally
         {
             IsTtsBusy = false;
+            OnPropertyChanged(nameof(CanReadCurrentPage));
+        }
+    }
+
+    public async Task PlayOrGenerateOcrAudioAsync(OcrRecord? record)
+    {
+        if (record is null || !HasDocument)
+        {
+            return;
+        }
+
+        record.RefreshAudioStatus();
+        if (!record.HasAudio)
+        {
+            await GenerateSpeechForRecordAsync(record);
+            record.RefreshAudioStatus();
+        }
+
+        if (record.HasAudio)
+        {
+            PlayOcrAudio(record);
+        }
+    }
+
+    public void PlayOcrAudio(OcrRecord? record)
+    {
+        if (record is null || !HasDocument)
+        {
+            return;
+        }
+
+        record.RefreshAudioStatus();
+        if (!record.HasAudio || string.IsNullOrWhiteSpace(record.LatestAudioPath))
+        {
+            StatusMessage = "该 OCR 记录尚未生成可用音频";
+            return;
+        }
+
+        SelectedOcrRecord = record;
+        GeneratedAudioPath = record.LatestAudioPath;
+        try
+        {
+            _audioPlaybackService.Play(record.LatestAudioPath);
+            StatusMessage = "正在播放 OCR 音频";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"播放失败: {exception.Message}";
         }
     }
 
@@ -1085,6 +2027,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 Y = _pendingOcrY,
                 Width = _pendingOcrWidth,
                 Height = _pendingOcrHeight,
+                CaptureZoom = _pendingOcrZoom,
+                Title = string.IsNullOrWhiteSpace(OcrTitle)
+                    ? CreateDefaultOcrTitle(OcrText)
+                    : OcrTitle.Trim(),
                 Text = OcrText.Trim(),
                 CapturePath = _pendingCapturePath,
                 CreatedAtUtc = DateTime.UtcNow,
@@ -1092,6 +2038,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             await _ocrRepository.AddAsync(record);
             OcrHistory.Insert(0, record);
             SelectedOcrRecord = record;
+            OcrTitle = record.Title;
+            RefreshCurrentPageOcr();
             GeneratedAudioPath = "尚未生成音频";
             _pendingCapturePath = null;
             HasPendingOcr = false;
@@ -1107,12 +2055,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void SetPendingOcr(double x, double y, double width, double height)
+    private void SetPendingOcr(double x, double y, double width, double height, double captureZoom)
     {
         _pendingOcrX = x;
         _pendingOcrY = y;
         _pendingOcrWidth = width;
         _pendingOcrHeight = height;
+        _pendingOcrZoom = captureZoom;
         HasPendingOcr = true;
     }
 
@@ -1125,6 +2074,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         HasPendingOcr = false;
+    }
+
+    private static string CreateDefaultOcrTitle(string text)
+    {
+        var title = text.Trim().Replace('\r', ' ').Replace('\n', ' ');
+        while (title.Contains("  ", StringComparison.Ordinal))
+        {
+            title = title.Replace("  ", " ", StringComparison.Ordinal);
+        }
+
+        return title.Length <= 24 ? title : $"{title[..24]}...";
     }
 
     private static void DeleteResources(IEnumerable<string> resources)
@@ -1189,6 +2149,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _currentPage = pageIndex;
             PageIndicator = $"{_currentPage + 1} / {_pdfService.PageCount}";
             ZoomIndicator = $"{_zoom:P0}";
+            RefreshCurrentPageOcr();
+            RefreshCurrentPageAnnotations();
             StatusMessage = "就绪";
         }
         catch (Exception exception)
@@ -1207,6 +2169,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyNavigationChanged();
         NotifyCaptureChanged();
         OnPropertyChanged(nameof(CanGenerateSpeech));
+        OnPropertyChanged(nameof(CanClearOcr));
+        OnPropertyChanged(nameof(CanAnnotate));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CurrentPageOcrButtonText));
+        if (!value)
+        {
+            _pendingAnnotationChanges.Clear();
+            NotifyAnnotationSaveChanged();
+            IsCurrentPageOcrVisible = false;
+            CurrentPageOcrRecords.Clear();
+            CurrentPageAnnotations.Clear();
+        }
         NotifyBookmarkChanged();
     }
 
@@ -1216,6 +2190,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyCaptureChanged();
         NotifyBookmarkChanged();
         OnPropertyChanged(nameof(CanUndoBookmarkDelete));
+        OnPropertyChanged(nameof(CanClearOcr));
+        OnPropertyChanged(nameof(CanAnnotate));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanSaveAnnotations));
     }
 
     partial void OnIsOcrBusyChanged(bool value)
@@ -1223,14 +2201,59 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanCancelOcr));
         NotifyCaptureChanged();
         NotifyBookmarkChanged();
+        OnPropertyChanged(nameof(CanClearOcr));
     }
 
-    partial void OnIsTtsBusyChanged(bool value) => OnPropertyChanged(nameof(CanGenerateSpeech));
+    partial void OnIsTtsBusyChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CanGenerateSpeech));
+        OnPropertyChanged(nameof(CanClearOcr));
+        OnPropertyChanged(nameof(CanAnnotate));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+    }
+
+    partial void OnIsAnnotationModeChanged(bool value)
+    {
+        OnPropertyChanged(nameof(AnnotationButtonText));
+        OnPropertyChanged(nameof(CanAnnotate));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+    }
+
+    partial void OnAnnotationToolChanged(AnnotationTool value)
+    {
+        OnPropertyChanged(nameof(AnnotationToolText));
+    }
+
+    partial void OnIsReadingCurrentPageChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ReadCurrentPageButtonText));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+    }
+
+    partial void OnIsCurrentPageOcrVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(CurrentPageOcrButtonText));
+    }
 
     partial void OnSelectedBookmarkChanged(Bookmark? value)
     {
-        SelectedBookmarkTitle = value?.Title ?? string.Empty;
+        if (!ReferenceEquals(SelectedTreeItem, value))
+        {
+            SelectedTreeItem = value;
+        }
         NotifyBookmarkChanged();
+    }
+
+    partial void OnSelectedTreeItemChanged(object? value)
+    {
+        if (value is Bookmark bookmark && !ReferenceEquals(SelectedBookmark, bookmark))
+        {
+            SelectedBookmark = bookmark;
+        }
+        else if (value is OcrRecord record && !ReferenceEquals(SelectedOcrRecord, record))
+        {
+            SelectedOcrRecord = record;
+        }
     }
 
     partial void OnSelectedOcrRecordChanged(OcrRecord? value)
@@ -1238,18 +2261,38 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (value is null)
         {
             GeneratedAudioPath = "尚未生成音频";
+            if (SelectedOcrHistoryRecord is not null)
+            {
+                SelectedOcrHistoryRecord = null;
+            }
+            if (SelectedTreeItem is OcrRecord)
+            {
+                SelectedTreeItem = null;
+            }
         }
         else
         {
+            OcrTitle = value.Title;
             OcrText = value.Text;
-            GeneratedAudioPath = value.TtsAudios
-                .OrderByDescending(audio => audio.CreatedAtUtc)
-                .Select(audio => audio.FilePath)
-                .FirstOrDefault() ?? "尚未生成音频";
+            value.RefreshAudioStatus();
+            GeneratedAudioPath = value.LatestAudioPath ?? "尚未生成音频";
+            if (!ReferenceEquals(SelectedTreeItem, value))
+            {
+                SelectedTreeItem = value;
+            }
         }
 
         OnPropertyChanged(nameof(CanGenerateSpeech));
+        OnPropertyChanged(nameof(CanClearOcr));
         NotifyBookmarkChanged();
+    }
+
+    partial void OnSelectedOcrHistoryRecordChanged(OcrRecord? value)
+    {
+        if (value is not null && !ReferenceEquals(SelectedOcrRecord, value))
+        {
+            SelectedOcrRecord = value;
+        }
     }
 
     private void NotifyBookmarkChanged()
@@ -1270,6 +2313,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public void Dispose()
     {
         _ocrCancellation?.Cancel();
+        _readingCancellation?.Cancel();
         PageImage?.Dispose();
         _pdfService.Dispose();
         _audioPlaybackService.Dispose();

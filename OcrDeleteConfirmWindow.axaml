@@ -1,0 +1,22 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.OcrDeleteConfirmWindow"
+        Title="确认清除 OCR 记录"
+        Width="520"
+        Height="240"
+        MinWidth="440"
+        MinHeight="220"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="*,Auto" Background="#F5F6F8">
+        <StackPanel Grid.Row="0" Spacing="12" Margin="24">
+            <TextBlock Text="OCR 记录尚未挂载" FontSize="18" FontWeight="SemiBold" Foreground="#303943" />
+            <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="#4A5560" />
+        </StackPanel>
+        <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,1,0,0" Padding="24,14">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="取消" Click="CancelClick" Padding="14,8" />
+                <Button Content="强制删除" Click="ConfirmClick" Padding="14,8" Background="#C53030" Foreground="White" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

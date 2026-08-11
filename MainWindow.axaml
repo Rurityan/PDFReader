@@ -7,6 +7,7 @@
         mc:Ignorable="d"
         x:Class="PDFReader.MainWindow"
         x:DataType="vm:MainWindowViewModel"
+        x:Name="RootWindow"
         Width="1280"
         Height="820"
         MinWidth="900"
@@ -29,10 +30,22 @@
             <Setter Property="Background" Value="#E6A23C" />
             <Setter Property="Foreground" Value="#20252B" />
         </Style>
+        <Style Selector="Button.topbar-button">
+            <Setter Property="Background" Value="#20252B" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+        </Style>
+        <Style Selector="Button.topbar-button:pointerover">
+            <Setter Property="Background" Value="#3A424B" />
+            <Setter Property="Foreground" Value="#FFFFFF" />
+        </Style>
+        <Style Selector="Button.annotation-tool">
+            <Setter Property="Background" Value="#F1F3F5" />
+            <Setter Property="Foreground" Value="#3B454F" />
+        </Style>
     </Window.Styles>
     <Grid RowDefinitions="Auto,Auto,*" Background="#F5F6F8">
         <Border Grid.Row="0" Background="#20252B" Padding="20,14">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto" VerticalAlignment="Center">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto,Auto" VerticalAlignment="Center">
                 <StackPanel Orientation="Horizontal" Spacing="12">
                     <TextBlock Text="PDF READER" Foreground="#FFFFFF" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
                     <Border Width="1" Height="22" Background="#50565E" />
@@ -40,6 +53,23 @@
                 </StackPanel>
                 <TextBlock Grid.Column="2" Text="{Binding StatusMessage}" Foreground="#AAB2BB" VerticalAlignment="Center" Margin="0,0,18,0" />
                 <Button Grid.Column="3"
+                        x:Name="FileMenuButton"
+                        Content="文件"
+                        Click="OpenFileMenuClick"
+                        Padding="12,6"
+                        Classes="topbar-button">
+                    <Button.ContextMenu>
+                        <ContextMenu DataContext="{Binding}">
+                            <MenuItem Header="保存 PDF"
+                                      IsEnabled="{Binding HasDocument}"
+                                      Click="SavePdfClick" />
+                            <MenuItem Header="另存为"
+                                      IsEnabled="{Binding HasDocument}"
+                                      Click="SavePdfAsClick" />
+                        </ContextMenu>
+                    </Button.ContextMenu>
+                </Button>
+                <Button Grid.Column="4"
                         Content="设置"
                         Click="OpenSettingsClick"
                         Padding="12,6"
@@ -48,78 +78,236 @@
         </Border>
 
         <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,0,1" Padding="18,10">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto" VerticalAlignment="Center">
-                <Button Grid.Column="0" Click="OpenFileClick" Padding="14,7" Background="#2B6CB0" Foreground="White" Content="打开 PDF" />
-                <Border Grid.Column="1" Width="1" Height="24" Background="#D9DDE2" Margin="16,0" />
-                <Button Grid.Column="2" Command="{Binding GoPreviousCommand}" Padding="10,7" Content="上一页" />
-                <Button Grid.Column="3" Command="{Binding GoNextCommand}" Padding="10,7" Margin="6,0,0,0" Content="下一页" />
-                <TextBlock Grid.Column="4" Text="{Binding PageIndicator}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" Margin="14,0" />
-                <StackPanel Grid.Column="6" Orientation="Horizontal" Spacing="6">
+            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+                <Button Grid.Column="0"
+                        x:Name="SidebarToggleButton"
+                        Content="◀"
+                        Click="ToggleSidebarClick"
+                        Width="38"
+                        Height="36"
+                        FontSize="18"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        Padding="0"
+                        ToolTip.Tip="折叠左侧栏" />
+                <Button Grid.Column="1" Click="OpenFileClick" Padding="14,7" Background="#2B6CB0" Foreground="White" Content="打开 PDF" />
+                <Border Grid.Column="2" Width="1" Height="24" Background="#D9DDE2" Margin="16,0" />
+                <Button Grid.Column="3" Command="{Binding GoPreviousCommand}" Padding="10,7" Content="上一页" />
+                <Button Grid.Column="4" Command="{Binding GoNextCommand}" Padding="10,7" Margin="6,0,0,0" Content="下一页" />
+                <TextBlock Grid.Column="5" Text="{Binding PageIndicator}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" Margin="14,0" />
+                <Button Grid.Column="6"
+                        Content="{Binding CurrentPageOcrButtonText}"
+                        Command="{Binding ToggleCurrentPageOcrCommand}"
+                        IsEnabled="{Binding HasDocument}"
+                        Margin="12,0,0,0"
+                        Padding="10,7" />
+                <Button Grid.Column="7"
+                        Content="↶"
+                        Command="{Binding UndoBookmarkDeleteCommand}"
+                        IsEnabled="{Binding CanUndoBookmarkDelete}"
+                        FontSize="24"
+                        Width="42"
+                        Height="36"
+                        Margin="6,0,0,0"
+                        Padding="0"
+                        HorizontalContentAlignment="Center"
+                        VerticalContentAlignment="Center"
+                        ToolTip.Tip="撤回删除" />
+                <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="6">
                     <Button Command="{Binding ZoomOutCommand}" Padding="9,7" Content="-" />
                     <TextBlock Text="{Binding ZoomIndicator}" Width="52" TextAlignment="Center" VerticalAlignment="Center" Foreground="#4A5560" />
                     <Button Command="{Binding ZoomInCommand}" Padding="9,7" Content="+" />
                 </StackPanel>
-                <Button Grid.Column="7" Margin="18,0,0,0" Padding="12,7" Content="标注" IsEnabled="False" />
-                <Button Grid.Column="8" Margin="6,0,0,0" Padding="12,7" Content="朗读" IsEnabled="False" />
+                <StackPanel Grid.Column="9"
+                            Orientation="Horizontal"
+                            Spacing="4"
+                            IsVisible="{Binding IsAnnotationMode}"
+                            Margin="12,0,0,0">
+                    <Button x:Name="TextAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Content="文本"
+                            Tag="Text"
+                            Click="AnnotationToolClick"
+                            Padding="8,7"
+                            ToolTip.Tip="文本标注" />
+                    <Button x:Name="LineAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Content="线"
+                            Tag="Line"
+                            Click="AnnotationToolClick"
+                            Padding="8,7"
+                            ToolTip.Tip="画线" />
+                    <Button x:Name="FreehandAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Content="自由"
+                            Tag="Freehand"
+                            Click="AnnotationToolClick"
+                            Padding="8,7"
+                            ToolTip.Tip="自由绘制" />
+                    <Button x:Name="RectangleAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Content="方框"
+                            Tag="Rectangle"
+                            Click="AnnotationToolClick"
+                            Padding="8,7"
+                            ToolTip.Tip="方框标注" />
+                    <Button x:Name="HighlightAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Content="高亮"
+                            Tag="Highlight"
+                            Click="AnnotationToolClick"
+                            Padding="8,7"
+                            ToolTip.Tip="高亮显示" />
+                    <Button x:Name="EraserAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Content="擦除"
+                            Tag="Eraser"
+                            Click="AnnotationToolClick"
+                            Padding="8,7"
+                            ToolTip.Tip="橡皮擦" />
+                </StackPanel>
+                <Button Grid.Column="11"
+                        Margin="18,0,0,0"
+                        Padding="12,7"
+                        Content="{Binding AnnotationButtonText}"
+                        Command="{Binding ToggleAnnotationCommand}"
+                        IsEnabled="{Binding HasDocument}" />
+                <Button Grid.Column="12"
+                        Margin="6,0,0,0"
+                        Padding="12,7"
+                        Content="保存标注"
+                        Command="{Binding SaveAnnotationsCommand}"
+                        IsEnabled="{Binding CanSaveAnnotations}"
+                        ToolTip.Tip="将缓存中的标注写入 PDF 文件" />
+                <Button Grid.Column="13"
+                        Margin="6,0,0,0"
+                        Padding="12,7"
+                        Content="{Binding ReadCurrentPageButtonText}"
+                        Command="{Binding ToggleReadCurrentPageCommand}"
+                        IsEnabled="{Binding CanReadCurrentPage}" />
             </Grid>
         </Border>
 
-        <Grid Grid.Row="2" ColumnDefinitions="270,*,300">
-            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="18,20">
-                <StackPanel Spacing="18">
-                    <TextBlock Text="PDF 文档" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
-                    <ListBox ItemsSource="{Binding Documents}"
+        <Grid x:Name="ContentLayout" Grid.Row="2">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="230" MinWidth="180" MaxWidth="420" />
+                <ColumnDefinition Width="5" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="300" />
+            </Grid.ColumnDefinitions>
+            <Border Grid.Column="0" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="12,14">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" RowSpacing="12">
+                    <TextBlock Grid.Row="0" Text="PDF 文档" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <ListBox Grid.Row="1"
+                             ItemsSource="{Binding Documents}"
                              SelectedItem="{Binding SelectedDocument, Mode=TwoWay}"
-                             Height="170"
+                             Height="105"
                              SelectionChanged="DocumentSelectionChanged">
                         <ListBox.ItemTemplate>
                             <DataTemplate x:DataType="model:PdfDocument">
                                 <StackPanel Spacing="2" Margin="0,3">
-                                    <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
-                                    <TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
-                                    <TextBlock Text="{Binding PathStatus}" TextWrapping="Wrap" Foreground="#C53030" FontSize="11" />
+                                    <TextBlock Text="{Binding FilePath}" TextWrapping="Wrap" Foreground="#37414A" FontSize="11" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <Border Height="1" Background="#E5E8EB" />
-                    <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
-                    <StackPanel Spacing="6">
-                        <TextBox Text="{Binding BookmarkTitle}" PlaceholderText="新书签名称（可选）" />
-                        <Button Content="创建当前页书签" Command="{Binding AddBookmarkCommand}" HorizontalAlignment="Left" Padding="10,6" />
-                        <TextBox Text="{Binding SelectedBookmarkTitle}" IsEnabled="{Binding HasSelectedBookmark}" PlaceholderText="选中书签名称" />
-                        <Button Content="保存选中书签" Command="{Binding SaveBookmarkCommand}" IsEnabled="{Binding HasSelectedBookmark}" HorizontalAlignment="Left" Padding="10,6" />
-                        <Button Content="撤回删除" Command="{Binding UndoBookmarkDeleteCommand}" IsEnabled="{Binding CanUndoBookmarkDelete}" HorizontalAlignment="Left" Padding="10,6" />
-                    </StackPanel>
-                    <TreeView x:Name="BookmarkTree"
-                              ItemsSource="{Binding Bookmarks}"
-                              SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
-                              Height="230"
-                              PointerPressed="BookmarkTreePointerPressed"
-                              PointerMoved="BookmarkTreePointerMoved"
-                              PointerReleased="BookmarkTreePointerReleased"
-                              DoubleTapped="BookmarkDoubleTapped">
-                        <TreeView.ItemTemplate>
-                            <TreeDataTemplate x:DataType="model:Bookmark" ItemsSource="{Binding Children}">
-                                <Grid ColumnDefinitions="Auto,*" Margin="0,3" Background="Transparent">
-                                    <Grid.ContextMenu>
-                                        <ContextMenu DataContext="{Binding}">
-                                            <MenuItem Header="跳转到所在页面" Tag="{Binding}" Click="JumpToBookmarkClick" />
-                                            <MenuItem Header="修改书签名称" Tag="{Binding}" Click="RenameBookmarkClick" />
-                                            <MenuItem Header="脱离父书签" Tag="{Binding}" Click="DetachBookmarkClick" />
-                                            <MenuItem Header="删除书签" Tag="{Binding}" Click="DeleteBookmarkClick" />
-                                        </ContextMenu>
-                                    </Grid.ContextMenu>
-                                    <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" Margin="0,0,8,0" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
-                                </Grid>
-                            </TreeDataTemplate>
-                        </TreeView.ItemTemplate>
-                    </TreeView>
-                </StackPanel>
+                    <Border Grid.Row="2" Height="1" Background="#E5E8EB" />
+                    <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto">
+                        <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" VerticalAlignment="Center" />
+                        <Button Grid.Column="1"
+                                Content="+"
+                                Click="CreateBookmarkClick"
+                                Width="36"
+                                Height="36"
+                                FontSize="25"
+                                Padding="0"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                ToolTip.Tip="创建书签" />
+                        <Button Grid.Column="2"
+                                Content="⌖"
+                                Click="FindCurrentPageBookmarkClick"
+                                Width="36"
+                                Height="36"
+                                FontSize="23"
+                                Padding="0"
+                                Margin="5,0,0,0"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                ToolTip.Tip="查找当前页书签" />
+                    </Grid>
+                    <Grid Grid.Row="4">
+                        <TreeView x:Name="BookmarkTree"
+                                  ItemsSource="{Binding Bookmarks}"
+                                  SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
+                                  MinHeight="230"
+                                  DoubleTapped="BookmarkDoubleTapped">
+                            <TreeView.DataTemplates>
+                                <TreeDataTemplate DataType="model:Bookmark" x:DataType="model:Bookmark" ItemsSource="{Binding DisplayChildren}">
+                                    <Grid Classes="bookmark-row" ColumnDefinitions="Auto,*" Margin="0,3" Background="Transparent">
+                                        <Grid.ContextMenu>
+                                            <ContextMenu DataContext="{Binding}">
+                                                <MenuItem Header="跳转到所在页面" Tag="{Binding}" Click="JumpToBookmarkClick" />
+                                                <MenuItem Header="修改书签名称" Tag="{Binding}" Click="RenameBookmarkClick" />
+                                                <MenuItem Header="脱离父书签" Tag="{Binding}" Click="DetachBookmarkClick" />
+                                                <MenuItem Header="删除书签" Tag="{Binding}" Click="DeleteBookmarkClick" />
+                                            </ContextMenu>
+                                        </Grid.ContextMenu>
+                                        <TextBlock Text="{Binding PageNumber}" Foreground="#2B6CB0" Margin="0,0,8,0" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" TextWrapping="Wrap" Foreground="#37414A" />
+                                    </Grid>
+                                </TreeDataTemplate>
+                                <TreeDataTemplate DataType="model:OcrRecord" x:DataType="model:OcrRecord">
+                                    <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2" Background="#F5F7F9">
+                                        <Border Background="#E7DDF5"
+                                                BorderBrush="#B99BD9"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="4,1"
+                                                Margin="0,0,6,0"
+                                                VerticalAlignment="Center">
+                                            <TextBlock Text="OCR" Foreground="#61478A" FontSize="9" FontWeight="SemiBold" />
+                                        </Border>
+                                        <TextBlock Grid.Column="1"
+                                                   Text="{Binding Title}"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="#61478A"
+                                                   FontWeight="SemiBold"
+                                                   FontSize="11"
+                                                   VerticalAlignment="Center" />
+                                        <Button Grid.Column="2"
+                                                Content="🔊"
+                                                Tag="{Binding}"
+                                                Click="PlayOcrAudioClick"
+                                                IsEnabled="{Binding HasAudio}"
+                                                ToolTip.Tip="播放 OCR 音频"
+                                                Padding="6,3"
+                                                VerticalAlignment="Center" />
+                                        <Grid.ContextMenu>
+                                            <ContextMenu DataContext="{Binding}">
+                                                <MenuItem Header="查看正文" Tag="{Binding}" Click="ViewOcrTextClick" />
+                                                <MenuItem Header="播放音频" Tag="{Binding}" IsEnabled="{Binding HasAudio}" Click="PlayOcrAudioClick" />
+                                                <MenuItem Header="生成音频" Tag="{Binding}" IsEnabled="{Binding !HasAudio}" Click="GenerateOcrAudioClick" />
+                                            </ContextMenu>
+                                        </Grid.ContextMenu>
+                                    </Grid>
+                                </TreeDataTemplate>
+                            </TreeView.DataTemplates>
+                        </TreeView>
+                        <Canvas x:Name="BookmarkDragOverlay" IsHitTestVisible="False" />
+                    </Grid>
+                </Grid>
             </Border>
+            <GridSplitter x:Name="SidebarSplitter"
+                          Grid.Column="1"
+                          Background="#D9DDE2"
+                          ResizeDirection="Columns"
+                          ResizeBehavior="PreviousAndNext"
+                          ShowsPreview="False"
+                          PointerReleased="SidebarSplitterPointerReleased"
+                          ToolTip.Tip="拖动调整左侧栏宽度" />
 
-            <Border Grid.Column="1" Background="#E9EBEE" Padding="28,24">
+            <Border Grid.Column="2" Background="#E9EBEE" Padding="28,24">
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
                         <Border Background="White" BoxShadow="0 2 12 0 #24000000" IsVisible="{Binding HasDocument}">
@@ -128,6 +316,10 @@
                                   PointerMoved="PageSurfacePointerMoved"
                                   PointerReleased="PageSurfacePointerReleased">
                                 <Image Source="{Binding PageImage}" Stretch="None" />
+                                <Canvas x:Name="AnnotationStrokePreview" IsHitTestVisible="False" />
+                                <Canvas x:Name="PdfAnnotationOverlay" />
+                                <Canvas x:Name="CurrentPageOcrOverlay"
+                                        IsVisible="{Binding IsCurrentPageOcrVisible}" />
                                 <Canvas IsHitTestVisible="False">
                                     <Rectangle x:Name="SelectionBox"
                                                Fill="#334A90E2"
@@ -145,7 +337,7 @@
                 </ScrollViewer>
             </Border>
 
-            <Border Grid.Column="2" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
+            <Border Grid.Column="3" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <StackPanel Spacing="18">
                     <TextBlock Text="工作区" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
@@ -153,11 +345,14 @@
                         <StackPanel Spacing="8">
                             <TextBlock Text="OCR 选区" FontWeight="SemiBold" Foreground="#414B55" />
                             <TextBlock Text="OCR 默认关闭，启动后选择截取模式。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
-                            <Button Content="启动 OCR" Command="{Binding StartOcrCommand}" IsEnabled="{Binding !IsOcrEnabled}" HorizontalAlignment="Left" Padding="12,7" />
-                            <Button Content="截取一次" Command="{Binding CaptureOnceCommand}" IsEnabled="{Binding CanSelectCaptureMode}" HorizontalAlignment="Left" Padding="12,7" />
-                            <Button Content="持续截取" Command="{Binding ToggleContinuousCaptureCommand}" IsEnabled="{Binding CanSelectCaptureMode}" HorizontalAlignment="Left" Padding="12,7" />
-                            <Button Content="取消截取" Command="{Binding CancelCaptureModeCommand}" IsEnabled="{Binding CanCancelCapture}" HorizontalAlignment="Left" Padding="12,7" />
-                            <Button Content="停止/放弃 OCR" Command="{Binding CancelOcrCommand}" Click="CancelOcrClick" IsEnabled="{Binding CanCancelOcr}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="6">
+                                <Button Grid.Row="0" Grid.Column="0" Content="启动 OCR" Command="{Binding StartOcrCommand}" IsEnabled="{Binding !IsOcrEnabled}" Padding="10,7" />
+                                <Button Grid.Row="1" Grid.Column="0" Content="放弃 OCR" Command="{Binding CancelOcrCommand}" Click="CancelOcrClick" IsEnabled="{Binding CanCancelOcr}" Padding="10,7" />
+                                <Button Grid.Row="0" Grid.Column="1" Content="截取一次" Command="{Binding CaptureOnceCommand}" IsEnabled="{Binding CanSelectCaptureMode}" Padding="10,7" />
+                                <Button Grid.Row="1" Grid.Column="1" Content="持续截取" Command="{Binding ToggleContinuousCaptureCommand}" IsEnabled="{Binding CanSelectCaptureMode}" Padding="10,7" />
+                                <Button Grid.Row="2" Grid.Column="1" Content="取消截取" Command="{Binding CancelCaptureModeCommand}" IsEnabled="{Binding CanCancelCapture}" Padding="10,7" />
+                            </Grid>
+                            <TextBox Text="{Binding OcrTitle}" PlaceholderText="OCR 标题" />
                             <TextBox Text="{Binding OcrText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150" MaxHeight="280" />
                             <Button Content="确认并保存 OCR" Command="{Binding SaveOcrCommand}" IsEnabled="{Binding HasPendingOcr}" HorizontalAlignment="Left" Padding="12,7" />
                             <TextBlock Text="{Binding LastCapturePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
@@ -166,32 +361,32 @@
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <TextBlock Text="OCR 历史记录" FontWeight="SemiBold" Foreground="#414B55" />
-                    <ListBox ItemsSource="{Binding OcrHistory}"
-                             SelectedItem="{Binding SelectedOcrRecord, Mode=TwoWay}"
+                    <ListBox x:Name="OcrHistoryList"
+                             ItemsSource="{Binding OcrHistory}"
+                             SelectedItem="{Binding SelectedOcrHistoryRecord, Mode=TwoWay}"
                              Height="180">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="model:OcrRecord">
                                         <StackPanel Spacing="2" Margin="0,3">
-                                            <TextBlock Text="{Binding PageNumber, StringFormat='第 {0} 页'}" Foreground="#2B6CB0" FontSize="12" />
-                                            <TextBlock Text="{Binding Text}" TextWrapping="Wrap" MaxHeight="42" Foreground="#37414A" FontSize="12" />
+                                            <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Foreground="#61478A" FontWeight="SemiBold" FontSize="12" />
                                         </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
                     </ListBox>
-                    <Button Content="挂载当前 OCR 到选中书签"
-                            Command="{Binding AttachOcrToBookmarkCommand}"
-                            IsEnabled="{Binding CanAttachOcr}"
-                            HorizontalAlignment="Left"
-                            Padding="12,7" />
-                        </StackPanel>
-                    </Border>
-                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
-                        <StackPanel Spacing="8">
-                            <TextBlock Text="页面音频" FontWeight="SemiBold" Foreground="#414B55" />
-                            <Button Content="生成选中 OCR 语音" Command="{Binding GenerateSpeechCommand}" IsEnabled="{Binding CanGenerateSpeech}" HorizontalAlignment="Left" Padding="12,7" />
-                            <Button Content="播放生成的音频" Command="{Binding PlayGeneratedAudioCommand}" IsEnabled="{Binding !IsTtsBusy}" HorizontalAlignment="Left" Padding="12,7" />
-                            <Button Content="停止播放" Command="{Binding StopAudioCommand}" HorizontalAlignment="Left" Padding="12,7" />
-                            <TextBlock Text="{Binding GeneratedAudioPath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <Button Content="挂载"
+                                Command="{Binding AttachOcrToBookmarkCommand}"
+                                IsEnabled="{Binding CanAttachOcr}"
+                                Padding="12,7" />
+                        <Button Content="生成音频"
+                                Command="{Binding GenerateSpeechCommand}"
+                                IsEnabled="{Binding CanGenerateSpeech}"
+                                Padding="12,7" />
+                        <Button Content="清除记录"
+                                Click="ClearOcrRecordClick"
+                                IsEnabled="{Binding CanClearOcr}"
+                                Padding="12,7" />
+                    </StackPanel>
                         </StackPanel>
                     </Border>
                     </StackPanel>
