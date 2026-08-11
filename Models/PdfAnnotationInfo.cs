@@ -16,6 +16,7 @@ public enum PdfAnnotationType
 public sealed class PdfAnnotationInfo
 {
     public string Id { get; init; } = Guid.NewGuid().ToString("N");
+    public string? Subtype { get; init; }
     public int PageNumber { get; init; }
     public PdfAnnotationType Type { get; init; }
     public string? Title { get; init; }

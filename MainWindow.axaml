@@ -90,7 +90,13 @@
         </Border>
 
         <Border Grid.Row="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,0,1" Padding="18,10">
-            <Grid ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto" VerticalAlignment="Center">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto"
+                          VerticalScrollBarVisibility="Disabled"
+                          HorizontalAlignment="Stretch">
+                <Grid MinWidth="1420"
+                      ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"
+                      VerticalAlignment="Center"
+                      Margin="0,0,0,14">
                 <Button Grid.Column="0"
                         x:Name="SidebarToggleButton"
                         Content="◀"
@@ -148,6 +154,20 @@
                             Spacing="4"
                             IsVisible="{Binding IsAnnotationMode}"
                             Margin="12,0,0,0">
+                    <Button x:Name="SelectAnnotationToolButton"
+                            Classes="annotation-tool"
+                            Tag="Select"
+                            Click="AnnotationToolClick"
+                            Width="36"
+                            Height="34"
+                            Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
+                            ToolTip.Tip="选择 PDF 标注">
+                        <PathIcon Width="16"
+                                  Height="19"
+                                  Data="M 1,1 L 1,17 L 5.8,12.2 L 9.3,19 L 11.3,18 L 7.9,11.2 L 15,11.2 Z" />
+                    </Button>
                     <Button x:Name="TextAnnotationToolButton"
                             Classes="annotation-tool"
                             Content="文本"
@@ -190,6 +210,11 @@
                             Click="AnnotationToolClick"
                             Padding="8,7"
                             ToolTip.Tip="橡皮擦" />
+                    <Button Content="↶"
+                            Command="{Binding UndoAnnotationDeleteCommand}"
+                            IsEnabled="{Binding CanUndoAnnotationDelete}"
+                            Padding="8,7"
+                            ToolTip.Tip="撤回删除标注" />
                 </StackPanel>
                 <Button Grid.Column="11"
                         Margin="18,0,0,0"
@@ -210,7 +235,8 @@
                         Content="{Binding ReadCurrentPageButtonText}"
                         Command="{Binding ToggleReadCurrentPageCommand}"
                         IsEnabled="{Binding CanReadCurrentPage}" />
-            </Grid>
+                </Grid>
+            </ScrollViewer>
         </Border>
 
         <Grid x:Name="ContentLayout" Grid.Row="2">
@@ -250,7 +276,7 @@
             </Border>
             <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="0,0,1,0" Padding="12,14">
                 <Grid RowDefinitions="Auto,Auto,*" RowSpacing="12">
-                    <TextBlock Grid.Row="0" Text="PDF 文档" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
+                    <TextBlock Grid.Row="0" Text="PDF 工作区" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" />
                     <ListBox Grid.Row="1"
                              ItemsSource="{Binding Documents}"
                              SelectedItem="{Binding SelectedDocument, Mode=TwoWay}"
@@ -279,17 +305,19 @@
                                      SelectionChanged="PagePreviewSelectionChanged">
                                 <ListBox.ItemsPanel>
                                     <ItemsPanelTemplate>
-                                        <WrapPanel Orientation="Horizontal" />
+                                        <VirtualizingStackPanel />
                                     </ItemsPanelTemplate>
                                 </ListBox.ItemsPanel>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="model:PagePreview">
-                                        <StackPanel Width="82" Spacing="3" Margin="2">
+                                        <StackPanel Width="160" Spacing="4" Margin="3,5" HorizontalAlignment="Center">
                                             <Border Background="White" BorderBrush="#C8D0D8" BorderThickness="1" Padding="3">
                                                 <Image Source="{Binding Image}"
-                                                       Width="72"
-                                                       Height="104"
-                                                       Stretch="Uniform" />
+                                                       Width="150"
+                                                       Height="210"
+                                                       Stretch="Uniform"
+                                                       AttachedToVisualTree="PagePreviewImageAttachedToVisualTree"
+                                                       DetachedFromVisualTree="PagePreviewImageDetachedFromVisualTree" />
                                             </Border>
                                             <TextBlock Text="{Binding PageNumber}"
                                                        FontSize="10"
@@ -500,7 +528,7 @@
                             <TextBlock Text="OCR 默认关闭，启动后选择截取模式。" TextWrapping="Wrap" Foreground="#89929C" FontSize="13" />
                             <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="6" RowSpacing="6">
                                 <Button Grid.Row="0" Grid.Column="0" Content="启动 OCR" Command="{Binding StartOcrCommand}" IsEnabled="{Binding !IsOcrEnabled}" Padding="10,7" />
-                                <Button Grid.Row="1" Grid.Column="0" Content="放弃 OCR" Command="{Binding CancelOcrCommand}" Click="CancelOcrClick" IsEnabled="{Binding CanCancelOcr}" Padding="10,7" />
+                                <Button Grid.Row="1" Grid.Column="0" Content="放弃结果" Command="{Binding CancelOcrCommand}" Click="CancelOcrClick" IsEnabled="{Binding CanCancelOcr}" Padding="10,7" />
                                 <Button Grid.Row="0" Grid.Column="1" Content="截取一次" Command="{Binding CaptureOnceCommand}" IsEnabled="{Binding CanSelectCaptureMode}" Padding="10,7" />
                                 <Button Grid.Row="1" Grid.Column="1" Content="持续截取" Command="{Binding ToggleContinuousCaptureCommand}" IsEnabled="{Binding CanSelectCaptureMode}" Padding="10,7" />
                                 <Button Grid.Row="2" Grid.Column="1" Content="取消截取" Command="{Binding CancelCaptureModeCommand}" IsEnabled="{Binding CanCancelCapture}" Padding="10,7" />

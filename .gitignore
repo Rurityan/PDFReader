@@ -19,3 +19,4 @@ appsettings.Local.json
 /user_data/
 /ocr_model/
 /publish/
+/largePDF.pdf

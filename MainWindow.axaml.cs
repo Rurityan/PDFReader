@@ -117,6 +117,10 @@ public partial class MainWindow : Window
         }
 
         ViewModel.ClearOcrHistorySelection();
+        if (!IsWithin(e.Source as Visual, PdfAnnotationOverlay))
+        {
+            ViewModel.ClearPdfAnnotationSelection();
+        }
     }
 
     private static bool IsWithin(Visual? source, Visual ancestor)
@@ -148,6 +152,11 @@ public partial class MainWindow : Window
         }
 
         if (e.PropertyName == nameof(MainWindowViewModel.CurrentZoom))
+        {
+            RenderPdfAnnotationOverlay();
+        }
+
+        if (e.PropertyName == nameof(MainWindowViewModel.SelectedPdfAnnotation))
         {
             RenderPdfAnnotationOverlay();
         }
@@ -203,6 +212,13 @@ public partial class MainWindow : Window
                 Height = Math.Max(height, 26),
                 IsHitTestVisible = true,
             };
+            layer.PointerPressed += PdfAnnotationPointerPressed;
+            layer.Children.Add(new Border
+            {
+                Width = layer.Width,
+                Height = layer.Height,
+                Background = new SolidColorBrush(Color.Parse("#01000000")),
+            });
 
             if (annotation.Type is PdfAnnotationType.Line or PdfAnnotationType.Freehand)
             {
@@ -222,14 +238,14 @@ public partial class MainWindow : Window
                 top = points.Min(point => point.Y) * scale;
                 width = Math.Max(2, (points.Max(point => point.X) - points.Min(point => point.X)) * scale);
                 height = Math.Max(2, (points.Max(point => point.Y) - points.Min(point => point.Y)) * scale);
-                layer.Width = width + 8;
-                layer.Height = height + 8;
+                layer.Width = width + 20;
+                layer.Height = height + 20;
                 for (var pointIndex = 1; pointIndex < points.Count; pointIndex++)
                 {
                     layer.Children.Add(new Line
                     {
-                        StartPoint = new Point(points[pointIndex - 1].X * scale - left + 4, points[pointIndex - 1].Y * scale - top + 4),
-                        EndPoint = new Point(points[pointIndex].X * scale - left + 4, points[pointIndex].Y * scale - top + 4),
+                        StartPoint = new Point(points[pointIndex - 1].X * scale - left + 10, points[pointIndex - 1].Y * scale - top + 10),
+                        EndPoint = new Point(points[pointIndex].X * scale - left + 10, points[pointIndex].Y * scale - top + 10),
                         Stroke = annotationBrush,
                         StrokeThickness = Math.Max(1, annotation.StrokeWidth * scale),
                     });
@@ -260,25 +276,30 @@ public partial class MainWindow : Window
             }
             else
             {
-                var note = new Border
+                var generic = new Border
                 {
-                    Width = 26,
-                    Height = 26,
-                    Background = new SolidColorBrush(Color.Parse("#E6D49A")),
-                    BorderBrush = new SolidColorBrush(Color.Parse("#AA8B5A")),
+                    Width = width,
+                    Height = height,
+                    Background = new SolidColorBrush(Color.Parse("#18D99726")),
+                    BorderBrush = new SolidColorBrush(Color.Parse("#B87800")),
                     BorderThickness = new Thickness(1),
-                    CornerRadius = new CornerRadius(3),
-                    Child = new TextBlock
-                    {
-                        Text = "✎",
-                        FontSize = 16,
-                        Foreground = new SolidColorBrush(Color.Parse("#5A4524")),
-                        HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                        VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-                    },
                 };
-                ToolTip.SetTip(note, string.IsNullOrWhiteSpace(annotation.Contents) ? "文本标注" : annotation.Contents);
-                layer.Children.Add(note);
+                ToolTip.SetTip(generic, string.IsNullOrWhiteSpace(annotation.Subtype)
+                    ? "通用 PDF 标注"
+                    : $"PDF 标注: {annotation.Subtype}");
+                layer.Children.Add(generic);
+            }
+
+            if (ReferenceEquals(ViewModel.SelectedPdfAnnotation, annotation))
+            {
+                layer.Children.Add(new Border
+                {
+                    Width = layer.Width,
+                    Height = layer.Height,
+                    BorderBrush = new SolidColorBrush(Color.Parse("#D79A00")),
+                    BorderThickness = new Thickness(2),
+                    IsHitTestVisible = false,
+                });
             }
 
             var deleteItem = new MenuItem
@@ -291,9 +312,18 @@ public partial class MainWindow : Window
             {
                 ItemsSource = new[] { deleteItem },
             };
-            Canvas.SetLeft(layer, left);
-            Canvas.SetTop(layer, top);
+            Canvas.SetLeft(layer, annotation.Type is PdfAnnotationType.Line or PdfAnnotationType.Freehand ? left - 10 : left);
+            Canvas.SetTop(layer, annotation.Type is PdfAnnotationType.Line or PdfAnnotationType.Freehand ? top - 10 : top);
             PdfAnnotationOverlay.Children.Add(layer);
+        }
+    }
+
+    private void PdfAnnotationPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Control { Tag: PdfAnnotationInfo annotation })
+        {
+            ViewModel.SelectPdfAnnotation(annotation);
+            e.Handled = true;
         }
     }
 
@@ -302,6 +332,16 @@ public partial class MainWindow : Window
         if ((sender as MenuItem)?.Tag is PdfAnnotationInfo annotation)
         {
             await ViewModel.DeleteAnnotationAsync(annotation);
+            e.Handled = true;
+        }
+    }
+
+    protected override async void OnKeyDown(KeyEventArgs e)
+    {
+        base.OnKeyDown(e);
+        if (e.Key == Key.Delete && ViewModel.SelectedPdfAnnotation is not null)
+        {
+            await ViewModel.DeleteAnnotationAsync(ViewModel.SelectedPdfAnnotation);
             e.Handled = true;
         }
     }
@@ -375,6 +415,13 @@ public partial class MainWindow : Window
         if ((!ViewModel.CanCapture && !ViewModel.CanAnnotate)
             || e.GetCurrentPoint(PageSurface).Properties.PointerUpdateKind != PointerUpdateKind.LeftButtonPressed)
         {
+            return;
+        }
+
+        if (ViewModel.IsAnnotationMode && ViewModel.AnnotationTool == AnnotationTool.Select)
+        {
+            ViewModel.ClearPdfAnnotationSelection();
+            e.Handled = true;
             return;
         }
 
@@ -567,6 +614,7 @@ public partial class MainWindow : Window
         var normalForeground = new SolidColorBrush(Color.Parse("#3B454F"));
         var buttons = new (Button Button, AnnotationTool Tool)[]
         {
+            (SelectAnnotationToolButton, AnnotationTool.Select),
             (TextAnnotationToolButton, AnnotationTool.Text),
             (LineAnnotationToolButton, AnnotationTool.Line),
             (FreehandAnnotationToolButton, AnnotationTool.Freehand),
@@ -592,6 +640,7 @@ public partial class MainWindow : Window
 
         PageSurface.Cursor = new Cursor(ViewModel.AnnotationTool switch
         {
+            AnnotationTool.Select => StandardCursorType.Hand,
             AnnotationTool.Text => StandardCursorType.Ibeam,
             AnnotationTool.Eraser => StandardCursorType.Hand,
             _ => StandardCursorType.Cross,
@@ -648,20 +697,13 @@ public partial class MainWindow : Window
 
     private async void OpenFileClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        var picker = new PdfDocumentPickerWindow(
+            ViewModel.AvailableDocuments,
+            ViewModel.AddPdfFilesAsync);
+        var selectedDocuments = await picker.ShowDialog<IReadOnlyList<PdfDocument>?>(this);
+        if (selectedDocuments is not null && selectedDocuments.Count > 0)
         {
-            Title = "打开 PDF 文档",
-            AllowMultiple = false,
-            FileTypeFilter = new[]
-            {
-                new FilePickerFileType("PDF 文档") { Patterns = new[] { "*.pdf" } }
-            }
-        });
-
-        var path = files.FirstOrDefault()?.Path.LocalPath;
-        if (!string.IsNullOrWhiteSpace(path))
-        {
-            await ViewModel.OpenDocumentAsync(path);
+            await ViewModel.ImportDocumentsToWorkspaceAsync(selectedDocuments);
         }
     }
 
@@ -708,6 +750,22 @@ public partial class MainWindow : Window
         if (sender is ListBox listBox && listBox.SelectedItem is PagePreview preview)
         {
             await ViewModel.GoToPageAsync(preview.PageNumber);
+        }
+    }
+
+    private void PagePreviewImageAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Image image && image.DataContext is PagePreview preview)
+        {
+            ViewModel.LoadPagePreviewImage(preview);
+        }
+    }
+
+    private void PagePreviewImageDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Image image && image.DataContext is PagePreview preview)
+        {
+            ViewModel.UnloadPagePreviewImage(preview);
         }
     }
 

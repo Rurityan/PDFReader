@@ -8,7 +8,7 @@ namespace PDFReader.Services;
 
 public sealed class PdfDocumentService : IDisposable
 {
-    private MuPDFContext? _context;
+    private readonly MuPDFContext _context = new(64u * 1024u * 1024u);
     private MuPDFDocument? _document;
 
     public bool IsOpen => _document is not null;
@@ -19,7 +19,6 @@ public sealed class PdfDocumentService : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         Close();
 
-        _context = new MuPDFContext(256u * 1024u * 1024u);
         _document = new MuPDFDocument(_context, filePath);
         return Task.CompletedTask;
     }
@@ -39,7 +38,7 @@ public sealed class PdfDocumentService : IDisposable
         }
 
         var output = new MemoryStream();
-        _document.WriteImage(pageIndex, zoom, PixelFormats.RGB, output, RasterOutputFileTypes.PNG, true);
+        _document.WriteImage(pageIndex, zoom, PixelFormats.RGB, output, RasterOutputFileTypes.PNG, false);
         output.Position = 0;
         return Task.FromResult<Stream>(output);
     }
@@ -69,18 +68,32 @@ public sealed class PdfDocumentService : IDisposable
             bounds.Y0 + (y + height) / zoom);
 
         var output = new MemoryStream();
-        _document.WriteImage(pageIndex, region, zoom, PixelFormats.RGB, output, RasterOutputFileTypes.PNG, true);
+        _document.WriteImage(pageIndex, region, zoom, PixelFormats.RGB, output, RasterOutputFileTypes.PNG, false);
         output.Position = 0;
         return Task.FromResult<Stream>(output);
     }
 
     public void Close()
     {
-        _document?.Dispose();
+        if (_document is not null)
+        {
+            try
+            {
+                _document.ClearCache();
+            }
+            finally
+            {
+                _document.Dispose();
+            }
+        }
+
         _document = null;
-        _context?.Dispose();
-        _context = null;
+        _context.ClearStore();
     }
 
-    public void Dispose() => Close();
+    public void Dispose()
+    {
+        Close();
+        _context.Dispose();
+    }
 }
