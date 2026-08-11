@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using PDFReader.Models;
@@ -27,6 +28,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly PdfDocumentRepository _documentRepository = new();
     private readonly SemaphoreSlim _documentOpenGate = new(1, 1);
     private readonly SemaphoreSlim _pageRenderGate = new(1, 1);
+    private readonly SemaphoreSlim _readingRenderGate = new(2, 2);
     private readonly Dictionary<Guid, Dictionary<int, IReadOnlyList<PdfAnnotationInfo>>> _annotationCache = new();
     private readonly Dictionary<int, Bitmap> _prefetchedPageImages = new();
     private readonly HashSet<int> _prefetchingPageIndexes = new();
@@ -37,12 +39,18 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private CancellationTokenSource? _ocrCancellation;
     private CancellationTokenSource? _readingCancellation;
     private Bitmap? _pageImage;
+    private Bitmap? _previousReadingPageImage;
+    private Bitmap? _nextReadingPageImage;
     private int _currentPage;
     private double _zoom = 1.25;
     private PagePreview? _selectedPagePreview;
     private readonly List<PdfAnnotationChange> _pendingAnnotationChanges = new();
     private bool _isSynchronizingTextFontSize;
     private int _pageRenderGeneration;
+    private DateTime _lastPageNavigationUtc;
+    private int _preloadRadius = 5;
+
+    public event Action<int>? ContinuousReadingPageRequested;
 
     [ObservableProperty]
     private decimal _annotationTextFontSize = 11;
@@ -178,6 +186,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public ObservableCollection<OcrRecord> CurrentPageOcrRecords { get; } = new();
     public ObservableCollection<PdfAnnotationInfo> CurrentPageAnnotations { get; } = new();
     public ObservableCollection<PagePreview> PagePreviews { get; } = new();
+    public ObservableCollection<ReadingPage> ReadingPages { get; } = new();
     public ObservableCollection<PdfDocument> AvailableDocuments { get; } = new();
     public ObservableCollection<PdfDocument> ArchivedDocuments { get; } = new();
     public ObservableCollection<Bookmark> Bookmarks { get; } = new();
@@ -291,8 +300,35 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         private set => SetProperty(ref _pageImage, value);
     }
 
+    public Bitmap? PreviousReadingPageImage
+    {
+        get => _previousReadingPageImage;
+        private set
+        {
+            if (SetProperty(ref _previousReadingPageImage, value))
+            {
+                OnPropertyChanged(nameof(HasPreviousReadingPage));
+            }
+        }
+    }
+
+    public Bitmap? NextReadingPageImage
+    {
+        get => _nextReadingPageImage;
+        private set
+        {
+            if (SetProperty(ref _nextReadingPageImage, value))
+            {
+                OnPropertyChanged(nameof(HasNextReadingPage));
+            }
+        }
+    }
+
     public bool CanGoPrevious => HasDocument && _currentPage > 0 && !IsBusy;
     public bool CanGoNext => HasDocument && _currentPage < _pdfService.PageCount - 1 && !IsBusy;
+    public bool HasPreviousReadingPage => !IsAnnotationMode && !CanCapture && PreviousReadingPageImage is not null;
+    public bool HasNextReadingPage => !IsAnnotationMode && !CanCapture && NextReadingPageImage is not null;
+    public bool IsContinuousReadingMode => HasDocument && !IsAnnotationMode && !CanCapture;
     public bool CanCancelOcr => IsOcrBusy || HasPendingOcr;
     public bool CanSelectCaptureMode => HasDocument && IsOcrEnabled && !IsBusy && !IsOcrBusy && !IsDocumentReadOnly;
     public bool CanCapture => CanSelectCaptureMode && (_captureOnce || IsContinuousCapture);
@@ -399,11 +435,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         else
         {
             CancelCaptureMode();
-            IsAnnotationMode = true;
-            AnnotationTool = AnnotationTool.Select;
             StatusMessage = "正在加载当前页标注...";
             try
             {
+                await ShowPageAsync(_currentPage);
+                IsAnnotationMode = true;
+                AnnotationTool = AnnotationTool.Select;
                 await EnsureCurrentPageAnnotationsAsync();
                 StatusMessage = "标注模式已开启，请框选要添加标注的区域";
             }
@@ -1185,6 +1222,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _readingCancellation?.Cancel();
         _audioPlaybackService.Stop();
         ClearPrefetchedPageImages();
+        ClearReadingPages();
         _pdfService.Close();
         PageImage?.Dispose();
         PageImage = null;
@@ -1201,6 +1239,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (CanGoPrevious)
         {
+            if (IsContinuousReadingMode)
+            {
+                NavigateContinuousReadingPage(_currentPage);
+                return;
+            }
+
             await ShowPageAsync(_currentPage - 1);
         }
     }
@@ -1210,6 +1254,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         if (CanGoNext)
         {
+            if (IsContinuousReadingMode)
+            {
+                NavigateContinuousReadingPage(_currentPage + 2);
+                return;
+            }
+
             await ShowPageAsync(_currentPage + 1);
         }
     }
@@ -1236,6 +1286,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (IsContinuousReadingMode)
+        {
+            NavigateContinuousReadingPage(pageNumber);
+            return;
+        }
+
         await ShowPageAsync(pageNumber - 1);
     }
 
@@ -1252,7 +1308,41 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        if (IsContinuousReadingMode)
+        {
+            NavigateContinuousReadingPage(pageNumber);
+            return;
+        }
+
         await ShowPageAsync(pageNumber - 1);
+    }
+
+    public void SetCurrentReadingPage(int pageNumber)
+    {
+        if (!IsContinuousReadingMode || pageNumber < 1 || pageNumber > _pdfService.PageCount
+            || pageNumber == _currentPage + 1)
+        {
+            return;
+        }
+
+        _currentPage = pageNumber - 1;
+        PageIndicator = $"{pageNumber} / {_pdfService.PageCount}";
+        PageNumberInput = pageNumber.ToString();
+        SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == pageNumber);
+        RefreshCurrentPageOcr();
+        NotifyNavigationChanged();
+        OnPropertyChanged(nameof(CurrentPageNumber));
+    }
+
+    private void NavigateContinuousReadingPage(int pageNumber)
+    {
+        if (!IsContinuousReadingMode || pageNumber < 1 || pageNumber > _pdfService.PageCount)
+        {
+            return;
+        }
+
+        SetCurrentReadingPage(pageNumber);
+        ContinuousReadingPageRequested?.Invoke(pageNumber);
     }
 
     [RelayCommand]
@@ -1263,6 +1353,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _zoom = Math.Min(3.0, _zoom + 0.25);
             ClearPrefetchedPageImages();
             await ShowPageAsync(_currentPage);
+            InitializeReadingPages();
         }
     }
 
@@ -1274,6 +1365,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _zoom = Math.Max(0.5, _zoom - 0.25);
             ClearPrefetchedPageImages();
             await ShowPageAsync(_currentPage);
+            InitializeReadingPages();
         }
     }
 
@@ -1291,13 +1383,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void CaptureOnce()
+    private async Task CaptureOnce()
     {
         if (!CanSelectCaptureMode)
         {
             return;
         }
 
+        await ShowPageAsync(_currentPage);
         _captureOnce = true;
         IsContinuousCapture = false;
         StatusMessage = "请在页面上拖动选择一次 OCR 区域";
@@ -1305,15 +1398,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private void ToggleContinuousCapture()
+    private async Task ToggleContinuousCapture()
     {
         if (!CanSelectCaptureMode && !IsContinuousCapture)
         {
             return;
         }
 
+        var enable = !IsContinuousCapture;
+        if (enable)
+        {
+            await ShowPageAsync(_currentPage);
+        }
+
         _captureOnce = false;
-        IsContinuousCapture = !IsContinuousCapture;
+        IsContinuousCapture = enable;
         StatusMessage = IsContinuousCapture
             ? "持续截取已开启，请连续拖动选择 OCR 区域"
             : "持续截取已停止";
@@ -1559,6 +1658,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _zoom = 1.25;
             ClearPagePreviews();
             await ShowPageAsync(_currentPage);
+            InitializeReadingPages();
             await LoadDocumentDataAsync();
             await LoadPagePreviewsAsync();
             StatusMessage = "文档已打开";
@@ -1582,6 +1682,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _audioPlaybackService.Stop();
         IsAnnotationMode = false;
         ClearPrefetchedPageImages();
+        ClearReadingPages();
         _pdfService.Close();
         PageImage?.Dispose();
         PageImage = null;
@@ -2446,6 +2547,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanSelectCaptureMode));
         OnPropertyChanged(nameof(CanCapture));
         OnPropertyChanged(nameof(CanCancelCapture));
+        OnPropertyChanged(nameof(HasPreviousReadingPage));
+        OnPropertyChanged(nameof(HasNextReadingPage));
+        OnPropertyChanged(nameof(IsContinuousReadingMode));
     }
 
     private async Task SaveBookmarkAndAncestorsAsync(Bookmark bookmark)
@@ -2800,7 +2904,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             await _pageRenderGate.WaitAsync();
             try
             {
-                if (!_prefetchedPageImages.Remove(pageIndex, out image!))
+                if (pageIndex == _currentPage - 1 && PreviousReadingPageImage is not null)
+                {
+                    image = PreviousReadingPageImage;
+                    PreviousReadingPageImage = null;
+                }
+                else if (pageIndex == _currentPage + 1 && NextReadingPageImage is not null)
+                {
+                    image = NextReadingPageImage;
+                    NextReadingPageImage = null;
+                }
+                else if (!_prefetchedPageImages.Remove(pageIndex, out image!))
                 {
                     await using var stream = await _pdfService.RenderPageAsync(pageIndex, _zoom);
                     image = new Bitmap(stream);
@@ -2813,14 +2927,25 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
             var oldImage = PageImage;
             PageImage = image;
-            oldImage?.Dispose();
+            if (oldImage is not null && Math.Abs(pageIndex - _currentPage) == 1)
+            {
+                SetReadingNeighbor(pageIndex > _currentPage, oldImage);
+            }
+            else
+            {
+                oldImage?.Dispose();
+            }
             _currentPage = pageIndex;
+            var now = DateTime.UtcNow;
+            _preloadRadius = now - _lastPageNavigationUtc < TimeSpan.FromMilliseconds(750) ? 10 : 5;
+            _lastPageNavigationUtc = now;
             PageIndicator = $"{_currentPage + 1} / {_pdfService.PageCount}";
             PageNumberInput = (_currentPage + 1).ToString();
             SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == _currentPage + 1);
             ZoomIndicator = $"{_zoom:P0}";
             RefreshCurrentPageOcr();
             await EnsureCurrentPageAnnotationsAsync();
+            ContinuousReadingPageRequested?.Invoke(_currentPage + 1);
             StatusMessage = "就绪";
         }
         catch (Exception exception)
@@ -2831,18 +2956,21 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             IsBusy = false;
             NotifyNavigationChanged();
+            PreloadAdjacentPages();
         }
     }
 
     public void PreloadAdjacentPages()
     {
-        if (!HasDocument || IsBusy || IsAnnotationMode || CanCapture)
+        if (!HasDocument || IsBusy || IsAnnotationMode || CanCapture || IsContinuousReadingMode)
         {
             return;
         }
 
         var generation = _pageRenderGeneration;
-        foreach (var pageIndex in Enumerable.Range(_currentPage - 5, 11)
+        PromotePrefetchedReadingNeighbors();
+        var preloadRadius = _preloadRadius;
+        foreach (var pageIndex in Enumerable.Range(_currentPage - preloadRadius, preloadRadius * 2 + 1)
                      .Where(index => index != _currentPage))
         {
             if (pageIndex < 0 || pageIndex >= _pdfService.PageCount
@@ -2877,9 +3005,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     return;
                 }
 
-                _prefetchedPageImages[pageIndex] = image;
+                if (pageIndex == _currentPage - 1)
+                {
+                    SetReadingNeighbor(previous: true, image);
+                }
+                else if (pageIndex == _currentPage + 1)
+                {
+                    SetReadingNeighbor(previous: false, image);
+                }
+                else
+                {
+                    _prefetchedPageImages[pageIndex] = image;
+                }
                 foreach (var stalePage in _prefetchedPageImages.Keys
-                             .Where(index => Math.Abs(index - _currentPage) > 5)
+                             .Where(index => Math.Abs(index - _currentPage) > _preloadRadius)
                              .ToArray())
                 {
                     _prefetchedPageImages[stalePage].Dispose();
@@ -2914,6 +3053,44 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         _prefetchedPageImages.Clear();
         _prefetchingPageIndexes.Clear();
+        PreviousReadingPageImage?.Dispose();
+        PreviousReadingPageImage = null;
+        NextReadingPageImage?.Dispose();
+        NextReadingPageImage = null;
+    }
+
+    private void SetReadingNeighbor(bool previous, Bitmap image)
+    {
+        var current = previous ? PreviousReadingPageImage : NextReadingPageImage;
+        if (ReferenceEquals(current, image))
+        {
+            return;
+        }
+
+        current?.Dispose();
+        if (previous)
+        {
+            PreviousReadingPageImage = image;
+        }
+        else
+        {
+            NextReadingPageImage = image;
+        }
+    }
+
+    private void PromotePrefetchedReadingNeighbors()
+    {
+        if (PreviousReadingPageImage is null
+            && _prefetchedPageImages.Remove(_currentPage - 1, out var previous))
+        {
+            PreviousReadingPageImage = previous;
+        }
+
+        if (NextReadingPageImage is null
+            && _prefetchedPageImages.Remove(_currentPage + 1, out var next))
+        {
+            NextReadingPageImage = next;
+        }
     }
 
     private async Task LoadPagePreviewsAsync()
@@ -3054,6 +3231,145 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         PagePreviews.Clear();
     }
 
+    private void InitializeReadingPages()
+    {
+        ClearReadingPages();
+        if (!HasDocument || _pdfService.PageCount == 0)
+        {
+            return;
+        }
+
+        for (var pageIndex = 0; pageIndex < _pdfService.PageCount; pageIndex++)
+        {
+            var size = _pdfService.GetPageSize(pageIndex, _zoom);
+            var previewPath = Path.Combine(
+                ReaderSettings.GetPagePreviewCacheDirectory(_documentId),
+                $"page-{pageIndex + 1:0000}.png");
+            ReadingPages.Add(new ReadingPage(pageIndex + 1, size.Width, size.Height, previewPath));
+        }
+    }
+
+    public void ActivateReadingPage(ReadingPage? page)
+    {
+        if (page is null || !ReadingPages.Contains(page))
+        {
+            return;
+        }
+
+        page.IsActive = true;
+        if (page.Image is null && page.PreviewImage is null && !page.IsPreviewQueued
+            && File.Exists(page.PreviewCachePath))
+        {
+            page.IsPreviewQueued = true;
+            _ = LoadReadingPagePreviewAsync(page, _documentId);
+        }
+    }
+
+    private async Task LoadReadingPagePreviewAsync(ReadingPage page, Guid documentId)
+    {
+        Bitmap? preview = null;
+        try
+        {
+            preview = await Task.Run(() =>
+            {
+                using var stream = File.OpenRead(page.PreviewCachePath);
+                return new Bitmap(stream);
+            });
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (HasDocument && _documentId == documentId && page.IsActive
+                    && page.Image is null && ReadingPages.Contains(page))
+                {
+                    page.SetPreview(preview);
+                    preview = null;
+                }
+            });
+        }
+        catch (Exception)
+        {
+        }
+        finally
+        {
+            preview?.Dispose();
+            await Dispatcher.UIThread.InvokeAsync(() => page.IsPreviewQueued = false);
+        }
+    }
+
+    public void QueueReadingPageRender(ReadingPage? page)
+    {
+        if (page is null || !page.IsActive || page.Image is not null || page.IsRenderQueued
+            || !ReadingPages.Contains(page) || !HasDocument)
+        {
+            return;
+        }
+
+        page.IsRenderQueued = true;
+        _ = RenderReadingPageAsync(page, _documentId, _zoom);
+    }
+
+    private async Task RenderReadingPageAsync(ReadingPage page, Guid documentId, double zoom)
+    {
+        Bitmap? image = null;
+        try
+        {
+            await _readingRenderGate.WaitAsync();
+            await _pageRenderGate.WaitAsync();
+            try
+            {
+                image = await Task.Run(() =>
+                {
+                    using var stream = _pdfService.RenderPageAsync(page.PageNumber - 1, zoom).GetAwaiter().GetResult();
+                    return new Bitmap(stream);
+                });
+            }
+            finally
+            {
+                _pageRenderGate.Release();
+                _readingRenderGate.Release();
+            }
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                if (HasDocument && _documentId == documentId && page.IsActive && ReadingPages.Contains(page))
+                {
+                    page.Image = image;
+                    page.UnloadPreview();
+                    image = null;
+                }
+            });
+        }
+        catch (Exception)
+        {
+        }
+        finally
+        {
+            image?.Dispose();
+            await Dispatcher.UIThread.InvokeAsync(() => page.IsRenderQueued = false);
+        }
+    }
+
+    public void UnloadReadingPageImage(ReadingPage? page)
+    {
+        if (page is not null && ReadingPages.Contains(page))
+        {
+            page.IsActive = false;
+            page.IsRenderQueued = false;
+            page.IsPreviewQueued = false;
+            page.Unload();
+        }
+    }
+
+    private void ClearReadingPages()
+    {
+        foreach (var page in ReadingPages)
+        {
+            page.Dispose();
+        }
+
+        ReadingPages.Clear();
+    }
+
     public void LoadPagePreviewImage(PagePreview? preview)
     {
         if (preview is null || !PagePreviews.Contains(preview))
@@ -3090,6 +3406,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanAnnotate));
         OnPropertyChanged(nameof(CanReadCurrentPage));
         OnPropertyChanged(nameof(CurrentPageOcrButtonText));
+        OnPropertyChanged(nameof(IsContinuousReadingMode));
         if (!value)
         {
             _pendingAnnotationChanges.Clear();
@@ -3100,6 +3417,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             CurrentPageOcrRecords.Clear();
             CurrentPageAnnotations.Clear();
             ClearPagePreviews();
+            ClearReadingPages();
         }
         NotifyBookmarkChanged();
     }
@@ -3137,6 +3455,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AnnotationButtonText));
         OnPropertyChanged(nameof(CanAnnotate));
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(HasPreviousReadingPage));
+        OnPropertyChanged(nameof(HasNextReadingPage));
+        OnPropertyChanged(nameof(IsContinuousReadingMode));
     }
 
     partial void OnAnnotationToolChanged(AnnotationTool value)
@@ -3287,6 +3608,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _readingCancellation?.Cancel();
         _audioPlaybackService.PlaybackStateChanged -= AudioPlaybackStateChanged;
         PageImage?.Dispose();
+        ClearReadingPages();
         ClearPagePreviews();
         _pdfService.Dispose();
         _audioPlaybackService.Dispose();

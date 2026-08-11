@@ -4,6 +4,7 @@ using System.Collections.Specialized;
 using System.ComponentModel;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -38,6 +39,7 @@ public partial class MainWindow : Window
     private TextResizeHandle? _activeTextResizeHandle;
     private Canvas? _activeTextResizeLayer;
     private Point _textResizeStart;
+    private CancellationTokenSource? _continuousReadingRenderDelay;
 
     public MainWindow()
     {
@@ -45,6 +47,12 @@ public partial class MainWindow : Window
         DataContext = new MainWindowViewModel();
         ViewModel.CurrentPageOcrRecords.CollectionChanged += CurrentPageOcrRecordsChanged;
         ViewModel.CurrentPageAnnotations.CollectionChanged += CurrentPageAnnotationsChanged;
+        ViewModel.ContinuousReadingPageRequested += ScrollContinuousReadingToPage;
+        ContinuousReadingList.AddHandler(
+            ScrollViewer.ScrollChangedEvent,
+            ContinuousReadingListScrollChanged,
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
+            true);
         BookmarkTree.AddHandler(
             InputElement.PointerPressedEvent,
             BookmarkTreePointerPressed,
@@ -181,6 +189,7 @@ public partial class MainWindow : Window
         {
             RenderAnnotationStrokePreview();
         }
+
     }
 
     private void CurrentPageOcrRecordsChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -586,6 +595,55 @@ public partial class MainWindow : Window
         if (e.OffsetDelta.X != 0 || e.OffsetDelta.Y != 0)
         {
             ViewModel.PreloadAdjacentPages();
+        }
+    }
+
+    private void ContinuousReadingListScrollChanged(object? sender, ScrollChangedEventArgs e)
+    {
+        if (e.OffsetDelta.Y == 0 || !ViewModel.IsContinuousReadingMode)
+        {
+            return;
+        }
+
+        var viewportCenter = ContinuousReadingList.Bounds.Height / 2;
+        ReadingPage? currentPage = null;
+        var nearestDistance = double.MaxValue;
+        foreach (var container in ContinuousReadingList.GetVisualDescendants().OfType<ListBoxItem>())
+        {
+            if (container.DataContext is not ReadingPage page)
+            {
+                continue;
+            }
+
+            var position = container.TranslatePoint(new Point(), ContinuousReadingList);
+            if (position is null)
+            {
+                continue;
+            }
+
+            var pageCenter = position.Value.Y + container.Bounds.Height / 2;
+            var distance = Math.Abs(pageCenter - viewportCenter);
+            if (distance < nearestDistance)
+            {
+                nearestDistance = distance;
+                currentPage = page;
+            }
+        }
+
+        if (currentPage is not null)
+        {
+            ViewModel.SetCurrentReadingPage(currentPage.PageNumber);
+        }
+
+        ScheduleVisibleReadingPageRenders();
+    }
+
+    private void ScrollContinuousReadingToPage(int pageNumber)
+    {
+        var page = ViewModel.ReadingPages.FirstOrDefault(item => item.PageNumber == pageNumber);
+        if (page is not null)
+        {
+            ContinuousReadingList.ScrollIntoView(page);
         }
     }
 
@@ -1031,6 +1089,56 @@ public partial class MainWindow : Window
         if (sender is Image image && image.DataContext is PagePreview preview)
         {
             ViewModel.UnloadPagePreviewImage(preview);
+        }
+    }
+
+    private void ReadingPageImageAttachedToVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Image image && image.DataContext is ReadingPage page)
+        {
+            ViewModel.ActivateReadingPage(page);
+            ScheduleVisibleReadingPageRenders();
+        }
+    }
+
+    private void ReadingPageImageDetachedFromVisualTree(object? sender, VisualTreeAttachmentEventArgs e)
+    {
+        if (sender is Image image && image.DataContext is ReadingPage page)
+        {
+            ViewModel.UnloadReadingPageImage(page);
+        }
+    }
+
+    private void ScheduleVisibleReadingPageRenders()
+    {
+        _continuousReadingRenderDelay?.Cancel();
+        _continuousReadingRenderDelay?.Dispose();
+        var cancellation = new CancellationTokenSource();
+        _continuousReadingRenderDelay = cancellation;
+        _ = QueueVisibleReadingPageRendersAsync(cancellation.Token);
+    }
+
+    private async Task QueueVisibleReadingPageRendersAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(220, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || !ViewModel.IsContinuousReadingMode)
+            {
+                return;
+            }
+
+            foreach (var page in ContinuousReadingList.GetVisualDescendants()
+                         .OfType<Image>()
+                         .Select(image => image.DataContext)
+                         .OfType<ReadingPage>()
+                         .Distinct())
+            {
+                ViewModel.QueueReadingPageRender(page);
+            }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -1647,6 +1755,8 @@ public partial class MainWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        _continuousReadingRenderDelay?.Cancel();
+        _continuousReadingRenderDelay?.Dispose();
         ViewModel.PropertyChanged -= ViewModelPropertyChanged;
         ViewModel.CurrentPageOcrRecords.CollectionChanged -= CurrentPageOcrRecordsChanged;
         ViewModel.CurrentPageAnnotations.CollectionChanged -= CurrentPageAnnotationsChanged;

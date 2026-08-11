@@ -14,6 +14,17 @@ public sealed class PdfDocumentService : IDisposable
     public bool IsOpen => _document is not null;
     public int PageCount => _document?.Pages.Count ?? 0;
 
+    public (double Width, double Height) GetPageSize(int pageIndex, double zoom)
+    {
+        if (_document is null)
+        {
+            throw new InvalidOperationException("No PDF document is open.");
+        }
+
+        var bounds = _document.Pages[pageIndex].Bounds;
+        return ((bounds.X1 - bounds.X0) * zoom, (bounds.Y1 - bounds.Y0) * zoom);
+    }
+
     public Task OpenAsync(string filePath, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();

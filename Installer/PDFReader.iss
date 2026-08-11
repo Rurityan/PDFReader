@@ -1,5 +1,5 @@
 #define MyAppName "PDFReader"
-#define MyAppVersion "0.1.0"
+#define MyAppVersion "1.1.2"
 #define MyAppPublisher "PDFReader"
 #ifndef PublishDir
   #define PublishDir "..\publish\win-x64"

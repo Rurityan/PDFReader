@@ -455,12 +455,54 @@
                           ToolTip.Tip="拖动调整左侧栏宽度" />
 
             <Border Grid.Column="3" Background="#E9EBEE" Padding="28,24">
+                <Grid>
+                    <ListBox x:Name="ContinuousReadingList"
+                             IsVisible="{Binding IsContinuousReadingMode}"
+                             ItemsSource="{Binding ReadingPages}"
+                             Background="Transparent"
+                             BorderThickness="0">
+                        <ListBox.ItemsPanel>
+                            <ItemsPanelTemplate>
+                                <VirtualizingStackPanel />
+                            </ItemsPanelTemplate>
+                        </ListBox.ItemsPanel>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate x:DataType="model:ReadingPage">
+                                <StackPanel Margin="0,0,0,18">
+                                    <Border Width="{Binding Width}"
+                                            Height="{Binding Height}"
+                                            Background="White"
+                                            BoxShadow="0 2 12 0 #24000000">
+                                        <Grid>
+                                            <Image Source="{Binding PreviewImage}" Stretch="Fill" />
+                                            <Image Source="{Binding Image}"
+                                                   Stretch="Fill"
+                                                   AttachedToVisualTree="ReadingPageImageAttachedToVisualTree"
+                                                   DetachedFromVisualTree="ReadingPageImageDetachedFromVisualTree" />
+                                        </Grid>
+                                    </Border>
+                                    <TextBlock Text="{Binding PageNumber}"
+                                               HorizontalAlignment="Center"
+                                               Margin="0,6,0,0"
+                                               Foreground="#6B7280"
+                                               FontSize="11" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
                 <ScrollViewer x:Name="DocumentScrollViewer"
+                              IsVisible="{Binding !IsContinuousReadingMode}"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto"
                               ScrollChanged="DocumentScrollViewerScrollChanged">
-                    <Grid HorizontalAlignment="Center" VerticalAlignment="Top">
-                        <Border Background="White" BoxShadow="0 2 12 0 #24000000" IsVisible="{Binding HasDocument}">
+                    <Grid HorizontalAlignment="Center" VerticalAlignment="Top" RowDefinitions="Auto,Auto,Auto">
+                        <Border Grid.Row="0"
+                                Background="White"
+                                BoxShadow="0 2 12 0 #24000000"
+                                IsVisible="{Binding HasPreviousReadingPage}">
+                            <Image Source="{Binding PreviousReadingPageImage}" Stretch="None" />
+                        </Border>
+                        <Border Grid.Row="1" Background="White" BoxShadow="0 2 12 0 #24000000" IsVisible="{Binding HasDocument}">
                             <Grid x:Name="PageSurface"
                                   PointerPressed="PageSurfacePointerPressed"
                                   PointerMoved="PageSurfacePointerMoved"
@@ -479,12 +521,19 @@
                                 </Canvas>
                             </Grid>
                         </Border>
-                        <StackPanel IsVisible="{Binding !HasDocument}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Margin="80">
+                        <StackPanel Grid.Row="1" IsVisible="{Binding !HasDocument}" HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="12" Margin="80">
                             <TextBlock Text="打开一个 PDF 开始阅读" FontSize="22" FontWeight="SemiBold" Foreground="#46515C" HorizontalAlignment="Center" />
                             <TextBlock Text="支持页面渲染、目录、文本选择、OCR 和语音朗读" Foreground="#7B858F" HorizontalAlignment="Center" />
                         </StackPanel>
+                        <Border Grid.Row="2"
+                                Background="White"
+                                BoxShadow="0 2 12 0 #24000000"
+                                IsVisible="{Binding HasNextReadingPage}">
+                            <Image Source="{Binding NextReadingPageImage}" Stretch="None" />
+                        </Border>
                     </Grid>
                 </ScrollViewer>
+                </Grid>
             </Border>
 
             <Border Grid.Column="4" Background="#FFFFFF" BorderBrush="#D9DDE2" BorderThickness="1,0,0,0" Padding="18,20">
