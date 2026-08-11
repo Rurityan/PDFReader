@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 using System.Text;
 using System.Linq;
 using PDFReader.Models;
@@ -11,6 +12,7 @@ namespace PDFReader.Services;
 #pragma warning disable CA1416 // This desktop application uses Windows DPAPI for API key protection.
 public sealed class SettingsService
 {
+    private static readonly UTF8Encoding Utf8WithoutBom = new(encoderShouldEmitUTF8Identifier: false);
     private readonly string _settingsPath = ReaderSettings.GetDefaultSettingsPath();
     private readonly string _legacySettingsPath = Path.Combine(
         Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
@@ -32,7 +34,7 @@ public sealed class SettingsService
                 return defaults;
             }
 
-            var json = File.ReadAllText(settingsPath);
+            var json = File.ReadAllText(settingsPath, Utf8WithoutBom);
             var settings = JsonSerializer.Deserialize<ReaderSettings>(json);
             var originalCaptureDirectory = settings?.OcrCaptureDirectory;
             var originalAudioDirectory = settings?.AudioDirectory;
@@ -86,8 +88,9 @@ public sealed class SettingsService
         var json = JsonSerializer.Serialize(persistedSettings, new JsonSerializerOptions
         {
             WriteIndented = true,
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
         });
-        File.WriteAllText(_settingsPath, json);
+        File.WriteAllText(_settingsPath, json, Utf8WithoutBom);
     }
 
     private static string ProtectApiKey(string apiKey)
