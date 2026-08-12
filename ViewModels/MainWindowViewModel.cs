@@ -26,6 +26,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly PdfEditingService _pdfEditingService = new();
     private readonly PdfAnnotationService _annotationService = new();
     private readonly PdfDocumentRepository _documentRepository = new();
+    private readonly LocalAutomationService _automationService;
     private readonly SemaphoreSlim _documentOpenGate = new(1, 1);
     private readonly SemaphoreSlim _pageRenderGate = new(1, 1);
     private readonly SemaphoreSlim _readingRenderGate = new(2, 2);
@@ -143,6 +144,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _autoGenerateOcrAudio;
 
     [ObservableProperty]
+    private string _localApiToken = string.Empty;
+
+    [ObservableProperty]
     private string _ocrCaptureDirectory = ReaderSettings.GetDefaultCaptureDirectory();
 
     [ObservableProperty]
@@ -212,6 +216,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         EnablePagePreviews = settings.EnablePagePreviews;
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        LocalApiToken = settings.LocalApiToken;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
         AudioDirectory = settings.AudioDirectory;
         TtsBaseUrl = settings.TtsBaseUrl;
@@ -219,6 +224,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TtsModelType = settings.TtsModelType;
         TtsVoiceModel = settings.TtsVoiceModel;
         _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
+        _automationService = new LocalAutomationService(CreateReaderSettings);
+        _automationService.ImportCompleted += AutomationImportCompleted;
+        _automationService.Start();
     }
 
     public async Task InitializeAsync()
@@ -2766,6 +2774,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        LocalApiToken = settings.LocalApiToken;
         var pagePreviewsWereEnabled = EnablePagePreviews;
         EnablePagePreviews = settings.EnablePagePreviews;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
@@ -2965,6 +2974,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             AutoGenerateOcrAudio = AutoGenerateOcrAudio,
+            LocalApiToken = LocalApiToken,
             OcrCaptureDirectory = OcrCaptureDirectory,
             AudioDirectory = AudioDirectory,
             TtsBaseUrl = TtsBaseUrl,
@@ -3883,11 +3893,28 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanGoNext));
     }
 
+    private async void AutomationImportCompleted(object? sender, Guid documentId)
+    {
+        await Dispatcher.UIThread.InvokeAsync(async () =>
+        {
+            if (documentId != _documentId)
+            {
+                return;
+            }
+
+            await LoadDocumentDataAsync();
+            RefreshReadingPageOcr();
+            StatusMessage = "已导入外部 OCR 与音频结果";
+        });
+    }
+
     public void Dispose()
     {
         _ocrCancellation?.Cancel();
         _readingCancellation?.Cancel();
         _audioPlaybackService.PlaybackStateChanged -= AudioPlaybackStateChanged;
+        _automationService.ImportCompleted -= AutomationImportCompleted;
+        _automationService.Dispose();
         PageImage?.Dispose();
         ClearReadingPages();
         ClearPagePreviews();

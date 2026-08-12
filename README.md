@@ -72,6 +72,27 @@ user_data/
 - TTS Base URL、API Key、Model Type
 - Voice Model 名称与 `voice_id` 键值对
 - OCR 喇叭按钮是否自动生成缺失音频（默认关闭）
+- 本地自动化接口 Token
+
+## 自动化导入接口
+
+应用启动后监听本机 `http://127.0.0.1:38421/api/v1/import/ocr-tts`。外部程序通过设置页的本地 Token，在请求头中传入 `X-PDFReader-Token`，即可批量导入 OCR 和已有音频。接口只监听本机，外部程序不应直接写入 `reader.db`。完整字段约定、错误响应和自动化示例见 [REST_API.md](REST_API.md)。
+
+```json
+{
+  "pdfPath": "D:\\docs\\book.pdf",
+  "records": [{
+    "page": 12,
+    "region": { "x": 120, "y": 240, "width": 860, "height": 180 },
+    "captureZoom": 1.0,
+    "title": "章节标题",
+    "text": "OCR 正文",
+    "audioFile": "D:\\automation-output\\page-12-001.mp3"
+  }]
+}
+```
+
+接口会按路径匹配或创建 PDF 记录，将音频复制到应用资源目录，并按页自动挂载到已有书签。没有同页书签的 OCR 保持未挂载状态。
 
 ## 发布与安装包
 

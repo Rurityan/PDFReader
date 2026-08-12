@@ -107,6 +107,10 @@ Voice Model 维护一个可增删的键值对列表。配置中的数组元素�
 
 API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱敏值。TTS 服务会在 Base URL 后补充 `/audio/speech`（如果用户没有填写该路径）。
 
+### 本地自动化导入
+
+应用内置本机 REST 服务，仅监听 `http://127.0.0.1:38421`。`POST /api/v1/import/ocr-tts` 要求请求头 `X-PDFReader-Token` 与 `settings.json` 中的 `LocalApiToken` 一致。服务接收 `pdfPath` 与 OCR 记录数组；每条记录包含页码、PDF 页面坐标区域、OCR 文本、可选标题、可选本地音频文件路径。服务通过仓储写入数据，复制音频到资源目录，并按页自动关联最深层书签。接口不接收远程 URL，不执行 OCR 区域判断或 TTS 推理，外部自动化应先完成这些步骤。
+
 ## 4.1 PDF 全量导出与恢复
 
 “文件 > 全量导出 PDF”生成新的 PDF 副本，不修改当前打开的文件。导出内容包括：

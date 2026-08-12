@@ -9,6 +9,7 @@ public sealed class ReaderSettings
     public bool EnablePagePreviews { get; set; } = true;
     public bool EnableOcrCaptureCache { get; set; }
     public bool AutoGenerateOcrAudio { get; set; }
+    public string LocalApiToken { get; set; } = Guid.NewGuid().ToString("N");
     public string OcrCaptureDirectory { get; set; } = GetDefaultCaptureDirectory();
     public string AudioDirectory { get; set; } = GetDefaultAudioDirectory();
     public string TtsBaseUrl { get; set; } = string.Empty;

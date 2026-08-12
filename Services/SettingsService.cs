@@ -68,6 +68,7 @@ public sealed class SettingsService
             EnablePagePreviews = settings.EnablePagePreviews,
             EnableOcrCaptureCache = settings.EnableOcrCaptureCache,
             AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio,
+            LocalApiToken = settings.LocalApiToken,
             OcrCaptureDirectory = settings.OcrCaptureDirectory,
             AudioDirectory = settings.AudioDirectory,
             TtsBaseUrl = settings.TtsBaseUrl,
@@ -110,6 +111,10 @@ public sealed class SettingsService
 
     private static ReaderSettings Normalize(ReaderSettings settings)
     {
+        if (string.IsNullOrWhiteSpace(settings.LocalApiToken))
+        {
+            settings.LocalApiToken = Guid.NewGuid().ToString("N");
+        }
         var legacyCaptureDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "PDFReader",
