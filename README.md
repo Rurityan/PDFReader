@@ -16,7 +16,7 @@ Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Av
 
 ## 运行要求
 
-- Windows ARM64（Python OCR 后端为原生 ARM64）
+- Windows x64/ARM64
 - .NET SDK 10（开发时）
 - Python 3.10+ 与本地虚拟环境 `.venv`
 - OCR 模型：`ocr_model/det.onnx`、`ocr_model/rec.onnx` 和 `inference.yml` 或 `ppocr_keys_v1.txt`
