@@ -184,6 +184,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private readonly Stack<DeletedBookmarkOperation> _deletedBookmarkHistory = new();
     private readonly Stack<DeletedAnnotationOperation> _deletedAnnotationHistory = new();
+    private readonly HashSet<Guid> _expandedBookmarkIds = new();
 
     public ObservableCollection<OcrRecord> OcrHistory { get; } = new();
     public ObservableCollection<OcrRecord> CurrentPageOcrRecords { get; } = new();
@@ -443,6 +444,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         if (IsAnnotationMode)
         {
             IsAnnotationMode = false;
+            InitializeReadingPages();
+            ContinuousReadingPageRequested?.Invoke(_currentPage + 1);
             StatusMessage = "标注模式已取消";
         }
         else
@@ -1061,6 +1064,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             OnPropertyChanged(nameof(CanUndoAnnotationDelete));
             _annotationCache.Remove(_documentId);
             await ReopenRenderedDocumentAsync(documentPath, pageIndex);
+            InitializeReadingPages();
             RefreshPagePreviewCacheMetadata();
             StatusMessage = "标注已保存到 PDF";
         }
@@ -1750,6 +1754,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task LoadDocumentDataAsync()
     {
+        LoadBookmarkExpansionCache();
         _pendingAnnotationChanges.Clear();
         _deletedAnnotationHistory.Clear();
         OnPropertyChanged(nameof(CanUndoAnnotationDelete));
@@ -1813,6 +1818,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
 
         RefreshBookmarkDisplayTree();
+        RestoreBookmarkExpansionState();
         RefreshCurrentPageOcr();
         RefreshReadingPageOcr();
     }
@@ -1931,6 +1937,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void RefreshBookmarkDisplayTree()
     {
+        CacheBookmarkExpansionState();
         foreach (var bookmark in Bookmarks.SelectMany(EnumerateBookmarkTree))
         {
             bookmark.DisplayChildren.Clear();
@@ -1946,7 +1953,84 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 bookmark.DisplayChildren.Add(child);
             }
         }
+
+        RestoreBookmarkExpansionState();
     }
+
+    private void CacheBookmarkExpansionState()
+    {
+        foreach (var bookmark in Bookmarks.SelectMany(EnumerateBookmarkTree))
+        {
+            if (bookmark.IsExpanded)
+            {
+                _expandedBookmarkIds.Add(bookmark.Id);
+            }
+            else
+            {
+                _expandedBookmarkIds.Remove(bookmark.Id);
+            }
+        }
+    }
+
+    private void RestoreBookmarkExpansionState()
+    {
+        foreach (var bookmark in Bookmarks.SelectMany(EnumerateBookmarkTree))
+        {
+            bookmark.IsExpanded = _expandedBookmarkIds.Contains(bookmark.Id);
+        }
+    }
+
+    public void SaveBookmarkExpansionCache(IEnumerable<Guid> expandedBookmarkIds)
+    {
+        if (_documentId == Guid.Empty)
+        {
+            return;
+        }
+
+        _expandedBookmarkIds.Clear();
+        _expandedBookmarkIds.UnionWith(expandedBookmarkIds);
+        try
+        {
+            var path = GetBookmarkExpansionCachePath();
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            File.WriteAllText(path, JsonSerializer.Serialize(_expandedBookmarkIds));
+        }
+        catch (IOException)
+        {
+        }
+        catch (UnauthorizedAccessException)
+        {
+        }
+    }
+
+    public bool IsBookmarkExpansionCached(Guid bookmarkId) => _expandedBookmarkIds.Contains(bookmarkId);
+
+    private void LoadBookmarkExpansionCache()
+    {
+        _expandedBookmarkIds.Clear();
+        if (_documentId == Guid.Empty)
+        {
+            return;
+        }
+
+        try
+        {
+            var path = GetBookmarkExpansionCachePath();
+            if (File.Exists(path))
+            {
+                _expandedBookmarkIds.UnionWith(JsonSerializer.Deserialize<Guid[]>(File.ReadAllText(path)) ?? Array.Empty<Guid>());
+            }
+        }
+        catch (JsonException)
+        {
+        }
+        catch (IOException)
+        {
+        }
+    }
+
+    private string GetBookmarkExpansionCachePath() =>
+        Path.Combine(ReaderSettings.GetPagePreviewCacheDirectory(_documentId), "bookmark-tree.json");
 
     private void RefreshCurrentPageOcr()
     {
@@ -2692,11 +2776,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TtsVoiceModel = settings.TtsVoiceModel;
         _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
 
-        _ocrRepository = new OcrResultRepository();
-        _bookmarkRepository = new BookmarkRepository();
         if (HasDocument)
         {
-            await LoadDocumentDataAsync();
             if (!EnablePagePreviews)
             {
                 IsPagePreviewPaneVisible = false;
@@ -3505,8 +3586,49 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             page.IsRenderQueued = false;
             page.IsPreviewQueued = false;
             page.Unload();
+            page.Annotations.Clear();
         }
     }
+
+    public async Task LoadReadingPageAnnotationsAsync(ReadingPage? page)
+    {
+        if (page is null || !page.IsActive || !HasDocument || !ReadingPages.Contains(page))
+        {
+            return;
+        }
+
+        try
+        {
+            var annotations = await _annotationService.GetAnnotationsAsync(DocumentPath, page.PageNumber - 1);
+            if (!page.IsActive || !HasDocument || !ReadingPages.Contains(page))
+            {
+                return;
+            }
+
+            page.Annotations.Clear();
+            foreach (var annotation in annotations)
+            {
+                page.Annotations.Add(ScaleAnnotation(annotation, _zoom));
+            }
+        }
+        catch (Exception)
+        {
+            // Continuous reading annotations are a visual enhancement only.
+        }
+    }
+
+    private static PdfAnnotationInfo ScaleAnnotation(PdfAnnotationInfo annotation, double scale) => new()
+    {
+        Id = annotation.Id, Subtype = annotation.Subtype, PageNumber = annotation.PageNumber,
+        Type = annotation.Type, Title = annotation.Title, Contents = annotation.Contents,
+        X = annotation.X * scale, Y = annotation.Y * scale,
+        Width = annotation.Width * scale, Height = annotation.Height * scale,
+        StartX = annotation.StartX * scale, StartY = annotation.StartY * scale,
+        EndX = annotation.EndX * scale, EndY = annotation.EndY * scale,
+        Points = annotation.Points.Select(point => new PdfAnnotationPoint(point.X * scale, point.Y * scale)).ToArray(),
+        StrokeColor = annotation.StrokeColor, StrokeWidth = annotation.StrokeWidth * scale,
+        FontSize = annotation.FontSize * scale,
+    };
 
     private void ClearReadingPages()
     {

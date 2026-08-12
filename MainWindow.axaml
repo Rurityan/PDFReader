@@ -381,7 +381,9 @@
                                           SelectedItem="{Binding SelectedBookmark, Mode=TwoWay}"
                                           DoubleTapped="BookmarkDoubleTapped">
                                     <TreeView.DataTemplates>
-                                <TreeDataTemplate DataType="model:Bookmark" x:DataType="model:Bookmark" ItemsSource="{Binding DisplayChildren}">
+                                <TreeDataTemplate DataType="model:Bookmark"
+                                                  x:DataType="model:Bookmark"
+                                                  ItemsSource="{Binding DisplayChildren}">
                                     <Grid Classes="bookmark-row" ColumnDefinitions="Auto,*" Margin="0,3" Background="Transparent">
                                         <Grid.ContextMenu>
                                             <ContextMenu DataContext="{Binding}">
@@ -498,6 +500,10 @@
                                                                         IsVisible="{Binding IsOcrVisible}"
                                                                         HorizontalAlignment="Stretch"
                                                                         VerticalAlignment="Stretch" />
+                                            <controls:AnnotationOverlayControl Annotations="{Binding Annotations}"
+                                                                              IsHitTestVisible="False"
+                                                                              HorizontalAlignment="Stretch"
+                                                                              VerticalAlignment="Stretch" />
                                         </Grid>
                                     </Border>
                                     <TextBlock Text="{Binding PageNumber}"

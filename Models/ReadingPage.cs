@@ -39,6 +39,7 @@ public sealed class ReadingPage : IDisposable, INotifyPropertyChanged
         }
     }
     public ObservableCollection<OcrRecord> OcrRecords { get; } = new();
+    public ObservableCollection<PdfAnnotationInfo> Annotations { get; } = new();
 
     public Bitmap? Image
     {

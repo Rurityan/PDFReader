@@ -49,6 +49,7 @@ public partial class MainWindow : Window
         DataContext = new MainWindowViewModel();
         ViewModel.CurrentPageOcrRecords.CollectionChanged += CurrentPageOcrRecordsChanged;
         ViewModel.CurrentPageAnnotations.CollectionChanged += CurrentPageAnnotationsChanged;
+        ViewModel.Bookmarks.CollectionChanged += BookmarkTreeDataChanged;
         ViewModel.ContinuousReadingPageRequested += ScrollContinuousReadingToPage;
         ContinuousReadingList.AddHandler(
             ScrollViewer.ScrollChangedEvent,
@@ -74,6 +75,11 @@ public partial class MainWindow : Window
             InputElement.PointerReleasedEvent,
             BookmarkTreePointerReleased,
             Avalonia.Interactivity.RoutingStrategies.Tunnel,
+            true);
+        BookmarkTree.AddHandler(
+            InputElement.PointerReleasedEvent,
+            BookmarkTreeExpansionCachePointerReleased,
+            Avalonia.Interactivity.RoutingStrategies.Bubble,
             true);
         AddHandler(
             InputElement.PointerPressedEvent,
@@ -1134,6 +1140,7 @@ public partial class MainWindow : Window
         if (sender is Image image && image.DataContext is ReadingPage page)
         {
             ViewModel.ActivateReadingPage(page);
+            _ = ViewModel.LoadReadingPageAnnotationsAsync(page);
             ScheduleVisibleReadingPageRenders();
         }
     }
@@ -1325,6 +1332,36 @@ public partial class MainWindow : Window
         _ocrDragCandidate = ocrRecord;
         _bookmarkDragStart = e.GetPosition(BookmarkTree);
         _isDraggingBookmark = false;
+    }
+
+    private void BookmarkTreeExpansionCachePointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(SaveBookmarkExpansionCache, DispatcherPriority.Background);
+    }
+
+    private void BookmarkTreeDataChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        Dispatcher.UIThread.Post(RestoreBookmarkExpansionCache, DispatcherPriority.Loaded);
+    }
+
+    private void SaveBookmarkExpansionCache()
+    {
+        var expandedIds = BookmarkTree.GetVisualDescendants()
+            .OfType<TreeViewItem>()
+            .Where(item => item.IsExpanded && item.DataContext is Bookmark)
+            .Select(item => ((Bookmark)item.DataContext!).Id);
+        ViewModel.SaveBookmarkExpansionCache(expandedIds);
+    }
+
+    private void RestoreBookmarkExpansionCache()
+    {
+        foreach (var item in BookmarkTree.GetVisualDescendants().OfType<TreeViewItem>())
+        {
+            if (item.DataContext is Bookmark bookmark)
+            {
+                item.IsExpanded = ViewModel.IsBookmarkExpansionCached(bookmark.Id);
+            }
+        }
     }
 
     private static bool IsTreeExpander(object? source)
@@ -1870,6 +1907,7 @@ public partial class MainWindow : Window
         ViewModel.PropertyChanged -= ViewModelPropertyChanged;
         ViewModel.CurrentPageOcrRecords.CollectionChanged -= CurrentPageOcrRecordsChanged;
         ViewModel.CurrentPageAnnotations.CollectionChanged -= CurrentPageAnnotationsChanged;
+        ViewModel.Bookmarks.CollectionChanged -= BookmarkTreeDataChanged;
         ViewModel.Dispose();
         base.OnClosed(e);
     }
