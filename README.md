@@ -29,7 +29,7 @@ py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r .\Scripts\requirements-ocr.txt
 ```
 
-Windows ARM64 使用[项目](https://github.com/Rurityan/windows-arm64-native-deps/tree/main/wheels)提供的 ARM64 wheel 安装 OCR 后端：
+Windows ARM64 使用[项目提供的 ARM64 wheel](https://github.com/Rurityan/windows-arm64-native-deps/tree/main/wheels) 安装 OCR 后端：
 
 ```powershell
 py -3.11 -m venv .venv
