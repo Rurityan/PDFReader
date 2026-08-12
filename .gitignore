@@ -20,3 +20,8 @@ appsettings.Local.json
 /ocr_model/
 /publish/
 /largePDF.pdf
+/py-libs/
+/\.venv-arm64/
+/tmp-py-arm64-check/
+/ocr-arm64-final.png
+/ocr-test-text.png

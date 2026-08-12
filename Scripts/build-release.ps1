@@ -1,35 +1,46 @@
 param(
     [string]$PythonEnvironmentPath = "",
-    [ValidateSet("win-x64", "win-arm64")]
+    [ValidateSet("win-x64", "win-arm64", "both")]
     [string]$RuntimeIdentifier = "win-x64",
+    [string]$DotnetPath = "",
     [switch]$BuildInstaller
 )
 
 $ErrorActionPreference = "Stop"
 $projectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$publishDirectory = Join-Path $projectRoot "publish\$RuntimeIdentifier"
-
-if ([string]::IsNullOrWhiteSpace($PythonEnvironmentPath)) {
-    $PythonEnvironmentPath = Join-Path $projectRoot ".venv"
+$dotnet = if ([string]::IsNullOrWhiteSpace($DotnetPath)) {
+    (Get-Command dotnet.exe -ErrorAction Stop).Source
+} else {
+    (Resolve-Path $DotnetPath).Path
 }
-$pythonEnvironment = (Resolve-Path $PythonEnvironmentPath).Path
-if (-not (Test-Path (Join-Path $pythonEnvironment "Scripts\python.exe"))) {
-    throw "Python environment is missing Scripts\python.exe: $pythonEnvironment"
+if (-not ((& $dotnet --list-sdks) -match '^10\.')) {
+    throw "A .NET 10 SDK is required. Use -DotnetPath to specify dotnet.exe."
 }
 
-Push-Location $projectRoot
-try {
+function Publish-Runtime {
+    param([string]$TargetRuntime)
+
+    $publishDirectory = Join-Path $projectRoot "publish\$TargetRuntime"
+    $environmentPath = $PythonEnvironmentPath
+    if ([string]::IsNullOrWhiteSpace($environmentPath)) {
+        $environmentPath = if ($TargetRuntime -eq "win-arm64") {
+            Join-Path $projectRoot ".venv-arm64"
+        } else {
+            Join-Path $projectRoot ".venv"
+        }
+    }
+    $pythonEnvironment = (Resolve-Path $environmentPath).Path
+    if (-not (Test-Path (Join-Path $pythonEnvironment "Scripts\python.exe"))) {
+        throw "Python environment is missing Scripts\python.exe: $pythonEnvironment"
+    }
+
     if (Test-Path $publishDirectory) {
         Remove-Item -LiteralPath $publishDirectory -Recurse -Force
     }
-    dotnet restore
-    dotnet publish .\PDFReader.csproj -c Release -r $RuntimeIdentifier --self-contained true `
+    & $dotnet publish .\PDFReader.csproj -c Release -r $TargetRuntime --self-contained true `
         -p:DebugType=None -p:DebugSymbols=false -o $publishDirectory
 
     $packagedPython = Join-Path $publishDirectory ".venv"
-    if (Test-Path $packagedPython) {
-        Remove-Item -LiteralPath $packagedPython -Recurse -Force
-    }
     Copy-Item -LiteralPath $pythonEnvironment -Destination $packagedPython -Recurse -Force
 
     if ($BuildInstaller) {
@@ -46,11 +57,22 @@ try {
         if ([string]::IsNullOrWhiteSpace($isccPath)) {
             throw "Inno Setup compiler ISCC.exe was not found in PATH."
         }
-        $installerArchitecture = if ($RuntimeIdentifier -eq "win-arm64") { "arm64" } else { "x64compatible" }
-        $installerPublishDirectory = "..\publish\$RuntimeIdentifier"
-        & $isccPath "/DPublishDir=$installerPublishDirectory" "/DTargetArchitectures=$installerArchitecture" .\Installer\PDFReader.iss
+        $installerArchitecture = if ($TargetRuntime -eq "win-arm64") { "arm64" } else { "x64compatible" }
+        $installerPublishDirectory = "..\publish\$TargetRuntime"
+        & $isccPath "/DPublishDir=$installerPublishDirectory" "/DTargetArchitectures=$installerArchitecture" "/DTargetRuntime=$TargetRuntime" .\Installer\PDFReader.iss
     }
 }
-finally {
+
+Push-Location $projectRoot
+try {
+    & $dotnet restore
+    if ($LASTEXITCODE -ne 0) { throw "dotnet restore failed with exit code $LASTEXITCODE" }
+    if ($RuntimeIdentifier -eq "both") {
+        Publish-Runtime "win-x64"
+        Publish-Runtime "win-arm64"
+    } else {
+        Publish-Runtime $RuntimeIdentifier
+    }
+} finally {
     Pop-Location
 }

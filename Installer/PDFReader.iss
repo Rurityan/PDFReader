@@ -7,16 +7,28 @@
 #ifndef TargetArchitectures
   #define TargetArchitectures "x64compatible"
 #endif
+#ifndef TargetRuntime
+  #define TargetRuntime "win-x64"
+#endif
+#if TargetRuntime == "win-arm64"
+  #define ArchName "arm64"
+#else
+  #define ArchName "x64"
+#endif
 
 [Setup]
+#if TargetRuntime == "win-arm64"
 AppId={{8F0D39EF-0F85-4A1E-9B0A-5B98C3B4D8D2}
+#else
+AppId={{8F0D39EF-0F85-4A1E-9B0A-5B98C3B4D8D3}
+#endif
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={localappdata}\Programs\PDFReader
+DefaultDirName={localappdata}\Programs\PDFReader-{#ArchName}
 DefaultGroupName={#MyAppName}
 OutputDir=..\publish\installer
-OutputBaseFilename=PDFReader-{#MyAppVersion}-Setup
+OutputBaseFilename=PDFReader-{#MyAppVersion}-{#ArchName}-Setup
 SetupIconFile=..\PDFReader.ico
 UninstallDisplayIcon={app}\PDFReader.exe
 Compression=lzma2

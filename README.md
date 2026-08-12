@@ -16,7 +16,7 @@ Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Av
 
 ## 运行要求
 
-- Windows x64
+- Windows ARM64（Python OCR 后端为原生 ARM64）
 - .NET SDK 10（开发时）
 - Python 3.10+ 与本地虚拟环境 `.venv`
 - OCR 模型：`ocr_model/det.onnx`、`ocr_model/rec.onnx` 和 `inference.yml` 或 `ppocr_keys_v1.txt`
@@ -28,6 +28,18 @@ Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Av
 py -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r .\Scripts\requirements-ocr.txt
 ```
+
+Windows ARM64 使用项目提供的 ARM64 wheel 安装 OCR 后端：
+
+```powershell
+py -3.11 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install --no-index --no-deps --find-links .\py-libs\win-arm64 `
+    numpy==2.4.6 PyMuPDF==1.28.2 onnxruntime-directml==1.30.0 `
+    opencv-python-headless==4.14.0.94 pyclipper==1.4.0
+.\.venv\Scripts\python.exe -m pip install -r .\Scripts\requirements-ocr-arm64.txt
+```
+
+ARM64 wheel 包含原生 `cv2`、`pyclipper`、ONNX Runtime DirectML 和 PyMuPDF；OCR 默认使用 DirectML，失败时回退 CPU。
 
 可通过 `PDFREADER_PYTHON` 指向其他 Python 解释器。OCR 设备环境变量为 `PDFREADER_OCR_DEVICE`：`auto`（默认，优先 DirectML）、`directml` 或 `cpu`。
 
@@ -108,11 +120,12 @@ dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p
 .\Scripts\build-release.ps1 -BuildInstaller
 ```
 
-构建 ARM64 发布目录或安装包时，使用 ARM64 Python 创建的 `.venv`：
+两个架构可以并行发布。x64 使用 `.venv`，ARM64 使用 `.venv-arm64`；安装器分别安装到 `PDFReader-x64` 和 `PDFReader-arm64`，不会互相覆盖：
 
 ```powershell
 .\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64
 .\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64 -BuildInstaller
+.\Scripts\build-release.ps1 -RuntimeIdentifier both -BuildInstaller
 ```
 
 安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
