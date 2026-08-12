@@ -109,7 +109,7 @@ API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱�
 
 ### 本地自动化导入
 
-应用内置本机 REST 服务，仅监听 `http://127.0.0.1:38421`。`POST /api/v1/import/ocr-tts` 要求请求头 `X-PDFReader-Token` 与 `settings.json` 中的 `LocalApiToken` 一致。服务接收 `pdfPath` 与 OCR 记录数组；每条记录包含页码、PDF 页面坐标区域、OCR 文本、可选标题、可选本地音频文件路径。服务通过仓储写入数据，复制音频到资源目录，并按页自动关联最深层书签。接口不接收远程 URL，不执行 OCR 区域判断或 TTS 推理，外部自动化应先完成这些步骤。
+应用内置本机 REST 服务，默认关闭；用户在设置页启用后监听 `http://127.0.0.1:{port}`，端口也在设置页配置，默认 `38421`。`POST /api/v1/import/ocr-tts` 要求请求头 `X-PDFReader-Token` 与 `settings.json` 中的 `LocalApiToken` 一致。服务接收 `pdfPath` 与 OCR 记录数组；每条记录包含页码、PDF 页面坐标区域、OCR 文本、可选标题、可选本地音频文件路径。服务通过仓储写入数据，复制音频到资源目录，并按页自动关联最深层书签。接口不接收远程 URL，不执行 OCR 区域判断或 TTS 推理，外部自动化应先完成这些步骤。
 
 ## 4.1 PDF 全量导出与恢复
 

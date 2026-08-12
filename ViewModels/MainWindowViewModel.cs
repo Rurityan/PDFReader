@@ -144,6 +144,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _autoGenerateOcrAudio;
 
     [ObservableProperty]
+    private bool _enableLocalApi;
+
+    [ObservableProperty]
+    private int _localApiPort = 38421;
+
+    [ObservableProperty]
     private string _localApiToken = string.Empty;
 
     [ObservableProperty]
@@ -216,6 +222,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         EnablePagePreviews = settings.EnablePagePreviews;
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        EnableLocalApi = settings.EnableLocalApi;
+        LocalApiPort = settings.LocalApiPort;
         LocalApiToken = settings.LocalApiToken;
         OcrCaptureDirectory = settings.OcrCaptureDirectory;
         AudioDirectory = settings.AudioDirectory;
@@ -226,7 +234,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
         _automationService = new LocalAutomationService(CreateReaderSettings);
         _automationService.ImportCompleted += AutomationImportCompleted;
-        _automationService.Start();
+        if (settings.EnableLocalApi)
+        {
+            _automationService.Start(settings.LocalApiPort);
+        }
     }
 
     public async Task InitializeAsync()
@@ -2197,8 +2208,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             await SaveBookmarkAndAncestorsAsync(bookmark);
             SelectedBookmark = bookmark;
+            var recordsToAttach = await AttachUnattachedOcrRecordsAsync(bookmark);
             RefreshBookmarkDisplayTree();
-            StatusMessage = "书签已创建并自动保存";
+            StatusMessage = recordsToAttach == 0
+                ? "书签已创建并自动保存"
+                : $"书签已创建并自动保存，已挂载 {recordsToAttach} 条当前页 OCR";
             NotifyBookmarkChanged();
         }
         catch (Exception exception)
@@ -2216,6 +2230,44 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             bookmark.ParentId = null;
             StatusMessage = $"创建书签失败: {exception.Message}";
         }
+    }
+
+    public async Task ReattachCurrentPageOcrAsync(Bookmark? bookmark)
+    {
+        if (bookmark is null || !CanModifyDocument || IsBusy || bookmark.PdfDocumentId != _documentId)
+        {
+            return;
+        }
+
+        try
+        {
+            await SaveBookmarkAndAncestorsAsync(bookmark);
+            SelectedBookmark = bookmark;
+            var count = await AttachUnattachedOcrRecordsAsync(bookmark);
+            RefreshBookmarkDisplayTree();
+            StatusMessage = count == 0
+                ? $"书签“{bookmark.Title}”所在页没有未挂载的 OCR 记录"
+                : $"已将 {count} 条 OCR 记录挂载到书签“{bookmark.Title}”";
+            NotifyBookmarkChanged();
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"重新读取 OCR 记录失败: {exception.Message}";
+        }
+    }
+
+    private async Task<int> AttachUnattachedOcrRecordsAsync(Bookmark bookmark)
+    {
+        var records = OcrHistory
+            .Where(record => record.PageNumber == bookmark.PageNumber && record.BookmarkId is null)
+            .ToList();
+        foreach (var record in records)
+        {
+            await _ocrRepository.AttachToBookmarkAsync(record.Id, bookmark.Id);
+            record.BookmarkId = bookmark.Id;
+        }
+
+        return records.Count;
     }
 
     public void FindCurrentPageBookmark()
@@ -2774,6 +2826,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        EnableLocalApi = settings.EnableLocalApi;
+        LocalApiPort = settings.LocalApiPort;
         LocalApiToken = settings.LocalApiToken;
         var pagePreviewsWereEnabled = EnablePagePreviews;
         EnablePagePreviews = settings.EnablePagePreviews;
@@ -2784,6 +2838,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         TtsModelType = settings.TtsModelType;
         TtsVoiceModel = settings.TtsVoiceModel;
         _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
+        if (settings.EnableLocalApi)
+        {
+            _automationService.Start(settings.LocalApiPort);
+        }
+        else
+        {
+            _automationService.Stop();
+        }
 
         if (HasDocument)
         {
@@ -2974,6 +3036,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             AutoGenerateOcrAudio = AutoGenerateOcrAudio,
+            EnableLocalApi = EnableLocalApi,
+            LocalApiPort = LocalApiPort,
             LocalApiToken = LocalApiToken,
             OcrCaptureDirectory = OcrCaptureDirectory,
             AudioDirectory = AudioDirectory,

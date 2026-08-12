@@ -28,7 +28,13 @@
                 <TextBlock Text="Base URL" FontSize="12" Foreground="#737E88" />
                 <TextBox Text="{Binding TtsBaseUrl}" PlaceholderText="例如 https://host.example/v1" />
                 <TextBlock Text="API Key" FontSize="12" Foreground="#737E88" />
-                <TextBox Text="{Binding TtsApiKey}" PasswordChar="*" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <TextBox x:Name="TtsApiKeyTextBox" Text="{Binding TtsApiKey}" PasswordChar="*" />
+                    <Button Grid.Column="1" Content="◉" Click="ToggleTtsApiKeyVisibilityClick"
+                            Width="34" Height="32" Padding="0"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                            ToolTip.Tip="显示或隐藏 API Key" />
+                </Grid>
                 <TextBlock Text="Model Type" FontSize="12" Foreground="#737E88" />
                 <TextBox Text="{Binding TtsModelType}" />
                 <TextBlock Text="Voice Model" FontSize="12" Foreground="#737E88" />
@@ -43,8 +49,28 @@
                 </ComboBox>
                 <CheckBox Content="OCR 喇叭按钮自动生成缺失音频"
                           IsChecked="{Binding AutoGenerateOcrAudio}" />
+                <Border Background="#EEF3F8" Padding="10" CornerRadius="4">
+                    <StackPanel Spacing="8">
+                        <CheckBox Content="开启本地自动化接口"
+                                  IsChecked="{Binding EnableLocalApi}" />
+                        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                            <TextBlock Text="监听端口" VerticalAlignment="Center" />
+                            <NumericUpDown Grid.Column="1"
+                                           Value="{Binding LocalApiPort}"
+                                           Minimum="1"
+                                           Maximum="65535"
+                                           FormatString="0" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
                 <TextBlock Text="本地自动化接口 Token" FontSize="12" Foreground="#737E88" />
-                <TextBox Text="{Binding LocalApiToken}" PasswordChar="*" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <TextBox x:Name="LocalApiTokenTextBox" Text="{Binding LocalApiToken}" PasswordChar="*" />
+                    <Button Grid.Column="1" Content="◉" Click="ToggleLocalApiTokenVisibilityClick"
+                            Width="34" Height="32" Padding="0"
+                            HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                            ToolTip.Tip="显示或隐藏本地 Token" />
+                </Grid>
                 <Grid ColumnDefinitions="*,Auto,Auto" Margin="0,4,0,0">
                     <TextBlock Text="语音模型键值对" FontSize="12" Foreground="#737E88" VerticalAlignment="Center" />
                     <Button Grid.Column="1"
@@ -53,6 +79,8 @@
                             Width="32"
                             Height="30"
                             Padding="0"
+                            HorizontalContentAlignment="Center"
+                            VerticalContentAlignment="Center"
                             ToolTip.Tip="添加语音模型" />
                     <TextBlock Grid.Column="2"
                                Text="name / voice_id"

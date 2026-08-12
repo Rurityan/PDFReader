@@ -88,7 +88,7 @@ user_data/
 
 ## 自动化导入接口
 
-应用启动后监听本机 `http://127.0.0.1:38421/api/v1/import/ocr-tts`。外部程序通过设置页的本地 Token，在请求头中传入 `X-PDFReader-Token`，即可批量导入 OCR 和已有音频。接口只监听本机，外部程序不应直接写入 `reader.db`。完整字段约定、错误响应和自动化示例见 [REST_API.md](REST_API.md)。
+本地自动化接口默认关闭；在设置页启用并配置端口后，外部程序通过本地 Token 和 `X-PDFReader-Token` 请求头批量导入 OCR 和已有音频。接口只监听本机，外部程序不应直接写入 `reader.db`。完整字段约定、错误响应和自动化示例见 [REST_API.md](REST_API.md)。
 
 ```json
 {

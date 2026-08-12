@@ -68,6 +68,8 @@ public sealed class SettingsService
             EnablePagePreviews = settings.EnablePagePreviews,
             EnableOcrCaptureCache = settings.EnableOcrCaptureCache,
             AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio,
+            EnableLocalApi = settings.EnableLocalApi,
+            LocalApiPort = settings.LocalApiPort,
             LocalApiToken = settings.LocalApiToken,
             OcrCaptureDirectory = settings.OcrCaptureDirectory,
             AudioDirectory = settings.AudioDirectory,
@@ -111,6 +113,11 @@ public sealed class SettingsService
 
     private static ReaderSettings Normalize(ReaderSettings settings)
     {
+        if (settings.LocalApiPort is < 1 or > 65535)
+        {
+            settings.LocalApiPort = 38421;
+        }
+
         if (string.IsNullOrWhiteSpace(settings.LocalApiToken))
         {
             settings.LocalApiToken = Guid.NewGuid().ToString("N");

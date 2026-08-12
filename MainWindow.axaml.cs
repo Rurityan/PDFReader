@@ -1697,6 +1697,15 @@ public partial class MainWindow : Window
         }
     }
 
+    private async void ReattachBookmarkOcrClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var bookmark = GetBookmarkFromMenu(sender);
+        if (bookmark is not null)
+        {
+            await ViewModel.ReattachCurrentPageOcrAsync(bookmark);
+        }
+    }
+
     private async void DetachBookmarkClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         var bookmark = GetBookmarkFromMenu(sender);

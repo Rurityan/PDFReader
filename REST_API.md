@@ -2,13 +2,13 @@
 
 This API lets an external OCR, vision, LLM, or TTS workflow import completed OCR text and optional audio into PDFReader. The external workflow decides page regions, performs OCR, and optionally creates audio. PDFReader stores the records, copies audio into its managed resource directory, and associates each OCR record with a same-page bookmark when available.
 
-The API is local only. It listens on `127.0.0.1` and is not reachable from other machines.
+The API is local only. It listens on `127.0.0.1` and is not reachable from other machines. It is disabled by default; enable it in Settings and choose a port before sending requests.
 
 ## Endpoint
 
-`POST http://127.0.0.1:38421/api/v1/import/ocr-tts`
+`POST http://127.0.0.1:{port}/api/v1/import/ocr-tts`
 
-The PDFReader application must be running before sending requests.
+The PDFReader application must be running and the local API must be enabled before sending requests. The default port is `38421`.
 
 ## Authentication
 
@@ -69,6 +69,15 @@ For each valid record, PDFReader:
 
 The API does not call OCR or TTS models. It only imports final results.
 
+### Duplicate Requests
+
+The import is idempotent for the same OCR data. A record is considered a duplicate when
+`pdfPath`, `page`, trimmed `text`, and the four region values (`x`, `y`, `width`, `height`)
+match an existing record. Region values allow a difference of at most `0.01` to account for
+floating-point serialization. Duplicate records are skipped. If a duplicate has no usable
+audio and the request provides an existing `audioFile`, the audio is copied and attached to
+the existing record instead of creating another OCR record.
+
 ## Success Response
 
 HTTP `200`:
@@ -86,7 +95,7 @@ HTTP `200`:
 
 | Status | Meaning |
 | --- | --- |
-| `400` | Invalid JSON, or `pdfPath` is missing or does not point to an existing file. |
+| `400` | Invalid JSON, or `pdfPath` is missing or does not point to an existing file. The response JSON contains the exact reason in `error`. |
 | `401` | Missing or incorrect `X-PDFReader-Token`. |
 | `404` | Incorrect HTTP method or endpoint path. |
 | `500` | Import failure. Inspect the returned `error` text and PDFReader status/log output. |
@@ -129,4 +138,3 @@ An external agent should follow this sequence:
 4. Produce OCR text and, if needed, audio files locally.
 5. Send records in batches for one PDF. Retrying a request creates new OCR records, so do not retry after an uncertain success without checking the response.
 6. If OCR should be attached automatically, create or import same-page bookmarks before calling the API.
-

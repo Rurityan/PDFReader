@@ -20,6 +20,33 @@ public sealed class OcrResultRepository
         await database.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<OcrRecord?> FindDuplicateAsync(
+        Guid documentId,
+        int pageNumber,
+        string text,
+        double x,
+        double y,
+        double width,
+        double height,
+        CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var candidates = await database.OcrRecords
+            .Include(record => record.TtsAudios)
+            .Where(record => record.PdfDocumentId == documentId
+                && record.PageNumber == pageNumber
+                && record.Text == text)
+            .OrderBy(record => record.CreatedAtUtc)
+            .ToListAsync(cancellationToken);
+
+        const double tolerance = 0.01;
+        return candidates.FirstOrDefault(record =>
+            Math.Abs(record.X - x) <= tolerance
+            && Math.Abs(record.Y - y) <= tolerance
+            && Math.Abs(record.Width - width) <= tolerance
+            && Math.Abs(record.Height - height) <= tolerance);
+    }
+
     public async Task<IReadOnlyList<OcrRecord>> GetForDocumentAsync(
         Guid documentId,
         CancellationToken cancellationToken = default)

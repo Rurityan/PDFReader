@@ -10,6 +10,8 @@ namespace PDFReader;
 public partial class SettingsWindow : Window
 {
     private readonly Func<ReaderSettings, Task> _applySettings;
+    private bool _ttsApiKeyVisible;
+    private bool _localApiTokenVisible;
 
     public SettingsWindow()
         : this(new ReaderSettings(), _ => Task.CompletedTask)
@@ -32,5 +34,17 @@ public partial class SettingsWindow : Window
     private void CancelClick(object? sender, RoutedEventArgs e)
     {
         Close();
+    }
+
+    private void ToggleTtsApiKeyVisibilityClick(object? sender, RoutedEventArgs e)
+    {
+        _ttsApiKeyVisible = !_ttsApiKeyVisible;
+        TtsApiKeyTextBox.PasswordChar = _ttsApiKeyVisible ? '\0' : '*';
+    }
+
+    private void ToggleLocalApiTokenVisibilityClick(object? sender, RoutedEventArgs e)
+    {
+        _localApiTokenVisible = !_localApiTokenVisible;
+        LocalApiTokenTextBox.PasswordChar = _localApiTokenVisible ? '\0' : '*';
     }
 }

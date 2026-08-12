@@ -388,6 +388,7 @@
                                         <Grid.ContextMenu>
                                             <ContextMenu DataContext="{Binding}">
                                                 <MenuItem Header="跳转到所在页面" Tag="{Binding}" Click="JumpToBookmarkClick" />
+                                                <MenuItem Header="重新读取 OCR 记录" Tag="{Binding}" Click="ReattachBookmarkOcrClick" />
                                                 <MenuItem Header="修改书签名称" Tag="{Binding}" Click="RenameBookmarkClick" />
                                                 <MenuItem Header="脱离父书签" Tag="{Binding}" Click="DetachBookmarkClick" />
                                                 <MenuItem Header="删除书签" Tag="{Binding}" Click="DeleteBookmarkClick" />
