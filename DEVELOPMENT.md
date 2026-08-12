@@ -284,14 +284,14 @@ py -m venv .venv
 .\Scripts\build-release.ps1 -BuildInstaller
 ```
 
-ARM64 Windows 发布使用独立输出目录和 ARM64 Python 虚拟环境：
+ARM64 Windows 发布使用独立输出目录和原生 ARM64 Python 虚拟环境 `.venv-arm64`：
 
 ```powershell
 .\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64
 .\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64 -BuildInstaller
 ```
 
-安装包会将 Python、ONNX Runtime、OCR worker 和 `ocr_model` 一起安装。卸载时会询问是否删除 `user_data`；选择保留即可保留数据库、设置、截图和语音资源。
+安装包会将对应架构的 Python、ONNX Runtime、OCR worker 和 `ocr_model` 一起安装；x64 与 ARM64 安装包可共存。卸载时会询问是否删除 `user_data`；选择保留即可保留数据库、设置、截图和语音资源。
 
 OCR 服务默认使用项目根目录下的：
 
