@@ -305,7 +305,7 @@ OCR 服务默认使用项目根目录下的：
 python -m pip install -r Scripts/requirements-ocr.txt
 ```
 
-默认模型目录为应用目录下的 `ocr_model/`，其中放置 `det.onnx`、`rec.onnx` 和识别模型的 `inference.yml`（也可使用 `ppocr_keys_v1.txt`）。设备选择通过 `PDFREADER_OCR_DEVICE` 控制：`auto` 默认优先 DirectML，`cpu` 强制 CPU，`directml` 强制 DirectML。也可以用 `PDFREADER_OCR_MODEL_DIR`、`PDFREADER_OCR_DET_MODEL`、`PDFREADER_OCR_REC_MODEL` 和 `PDFREADER_OCR_DICTIONARY` 覆盖资源路径。
+默认模型目录为应用目录下的 `ocr_model/`，内置官方 PP-OCRv5 server ONNX 模型：`det.onnx`、`rec.onnx` 和识别模型的 `inference.yml`（也可使用 `ppocr_keys_v1.txt`）。该组合面向高准确率中文、繁体中文、英文和日文识别；检测长边默认按 960 像素预处理，识别输入固定高 48 像素。设备选择通过 `PDFREADER_OCR_DEVICE` 控制：`auto` 默认优先 DirectML，`cpu` 强制 CPU，`directml` 强制 DirectML。也可以用 `PDFREADER_OCR_MODEL_DIR`、`PDFREADER_OCR_DET_MODEL`、`PDFREADER_OCR_REC_MODEL` 和 `PDFREADER_OCR_DICTIONARY` 覆盖资源路径。
 
 建议验证以下流程：
 

@@ -17,7 +17,6 @@ appsettings.Local.json
 /ocr-test.png
 /ocr-result.json
 /user_data/
-/ocr_model/
 /publish/
 /largePDF.pdf
 /py-libs/

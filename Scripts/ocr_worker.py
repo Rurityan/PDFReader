@@ -270,8 +270,7 @@ def load_dictionary(path: Path):
 
     if not characters:
         raise RuntimeError(f"OCR 字典为空: {path}")
-    # PP-OCR recognition models reserve a class for the regular space in addition
-    # to the characters listed in inference.yml.
+    # Earlier PP-OCR exports omit the regular-space class; PP-OCRv5 server includes it.
     if " " not in characters:
         characters.append(" ")
     return characters
