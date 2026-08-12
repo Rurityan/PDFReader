@@ -59,7 +59,7 @@ var
 function InitializeUninstall(): Boolean;
 begin
   DeleteUserData := False;
-  if not WizardSilent then
+  if not UninstallSilent then
     DeleteUserData := MsgBox(
       'Delete the user_data folder, including the database, settings, screenshots and audio files?'#13#10#13#10 +
       'Choose No to keep user data for a future installation.',
