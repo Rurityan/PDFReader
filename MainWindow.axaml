@@ -435,11 +435,17 @@
                                                 <MenuItem Header="播放音频" Tag="{Binding}" IsEnabled="{Binding HasAudio}" Click="PlayOcrAudioClick" />
                                                 <MenuItem Header="生成音频" Tag="{Binding}" IsEnabled="{Binding !HasAudio}" Click="GenerateOcrAudioClick" />
                                                 <MenuItem Header="以指定模型生成"
+                                                          Tag="{Binding}"
                                                           IsEnabled="{Binding !HasAudio}"
-                                                          SubmenuOpened="GenerateOcrWithVoiceSubmenuOpened" />
+                                                          SubmenuOpened="GenerateOcrWithVoiceSubmenuOpened">
+                                                    <MenuItem Header="加载模型列表..." IsEnabled="False" />
+                                                </MenuItem>
                                                 <MenuItem Header="以指定模型重新生成"
+                                                          Tag="{Binding}"
                                                           IsEnabled="{Binding HasAudio}"
-                                                          SubmenuOpened="RegenerateOcrWithVoiceSubmenuOpened" />
+                                                          SubmenuOpened="RegenerateOcrWithVoiceSubmenuOpened">
+                                                    <MenuItem Header="加载模型列表..." IsEnabled="False" />
+                                                </MenuItem>
                                                 <Separator />
                                                 <MenuItem Header="移除此条记录" Tag="{Binding}" Click="RemoveOcrRecordClick" />
                                             </ContextMenu>
