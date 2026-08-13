@@ -370,7 +370,7 @@
                             </Grid>
                         </Border>
                         <Grid IsVisible="{Binding IsBookmarkPaneVisible}" RowDefinitions="Auto,*" RowSpacing="12">
-                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto">
+                            <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto">
                                 <TextBlock Text="书签" FontSize="13" FontWeight="SemiBold" Foreground="#66717C" VerticalAlignment="Center" />
                                 <Button Grid.Column="1"
                                         Content="+"
@@ -394,6 +394,17 @@
                                         HorizontalContentAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="查找当前页书签" />
+                                <Button Grid.Column="3"
+                                        Content="🔎"
+                                        Click="FindBookmarkByNameClick"
+                                        Width="36"
+                                        Height="36"
+                                        FontSize="17"
+                                        Padding="0"
+                                        Margin="5,0,0,0"
+                                        HorizontalContentAlignment="Center"
+                                        VerticalContentAlignment="Center"
+                                        ToolTip.Tip="按名称查找书签位置" />
                             </Grid>
                             <Grid Grid.Row="1">
                                 <TreeView x:Name="BookmarkTree"
@@ -410,6 +421,7 @@
                                                 <MenuItem Header="跳转到所在页面" Tag="{Binding}" Click="JumpToBookmarkClick" />
                                                 <MenuItem Header="重新读取 OCR 记录" Tag="{Binding}" Click="ReattachBookmarkOcrClick" />
                                                 <MenuItem Header="修改书签名称" Tag="{Binding}" Click="RenameBookmarkClick" />
+                                                <MenuItem Header="挂载为子书签" Tag="{Binding}" Click="AttachBookmarkAsChildClick" />
                                                 <MenuItem Header="脱离父书签" Tag="{Binding}" Click="DetachBookmarkClick" />
                                                 <MenuItem Header="删除书签" Tag="{Binding}" Click="DeleteBookmarkClick" />
                                             </ContextMenu>
@@ -670,7 +682,7 @@
                             </Grid>
                             <TextBox Text="{Binding OcrTitle}" PlaceholderText="OCR 标题" />
                             <TextBox Text="{Binding OcrText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150" MaxHeight="280" />
-                            <Button Content="确认并保存 OCR" Command="{Binding SaveOcrCommand}" IsEnabled="{Binding HasPendingOcr}" HorizontalAlignment="Left" Padding="12,7" />
+                            <Button Content="确认并保存 OCR" Command="{Binding SaveOcrCommand}" IsEnabled="{Binding CanConfirmOcr}" HorizontalAlignment="Left" Padding="12,7" />
                             <TextBlock Text="{Binding LastCapturePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
                         </StackPanel>
                     </Border>
@@ -678,13 +690,15 @@
                         <StackPanel Spacing="8">
                             <TextBlock Text="OCR 历史记录" FontWeight="SemiBold" Foreground="#414B55" />
                     <ListBox x:Name="OcrHistoryList"
-                             ItemsSource="{Binding OcrHistory}"
+                             ItemsSource="{Binding OcrProcessingQueue}"
                              SelectedItem="{Binding SelectedOcrHistoryRecord, Mode=TwoWay}"
-                             Height="180">
+                             Height="180"
+                             DoubleTapped="OcrHistoryDoubleTapped">
                                 <ListBox.ItemTemplate>
                                     <DataTemplate x:DataType="model:OcrRecord">
                                         <StackPanel Spacing="2" Margin="0,3">
                                             <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Foreground="#61478A" FontWeight="SemiBold" FontSize="12" />
+                                            <TextBlock Text="{Binding QueueStatusText}" Foreground="#89929C" FontSize="10" />
                                         </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -693,6 +707,8 @@
                         <Button Content="挂载"
                                 Command="{Binding AttachOcrToBookmarkCommand}"
                                 IsEnabled="{Binding CanAttachOcr}"
+                                Background="#D99A21"
+                                Foreground="White"
                                 Padding="12,7" />
                         <Button Content="生成音频"
                                 Command="{Binding GenerateSpeechCommand}"

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Collections.Concurrent;
 using System.IO;
 using System.Collections.ObjectModel;
 using System.Linq;
@@ -38,7 +39,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private BookmarkRepository _bookmarkRepository;
     private ReaderSettings _settings;
     private Guid _documentId;
-    private CancellationTokenSource? _ocrCancellation;
+    private readonly HashSet<CancellationTokenSource> _ocrCancellations = new();
+    private readonly object _ocrCancellationLock = new();
+    private readonly SemaphoreSlim _ocrQueueSignal = new(0);
+    private readonly CancellationTokenSource _ocrQueueCancellation = new();
+    private readonly Task _ocrQueueWorker;
+    private readonly ConcurrentQueue<OcrQueueJob> _ocrQueue = new();
     private CancellationTokenSource? _readingCancellation;
     private Bitmap? _pageImage;
     private Bitmap? _previousReadingPageImage;
@@ -52,7 +58,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private DateTime _lastPageNavigationUtc;
     private int _preloadRadius = 5;
 
+    private sealed record OcrQueueJob(OcrRecord Record, byte[] ImageBytes);
+
     public event Action<int>? ContinuousReadingPageRequested;
+    public event Action<Bookmark>? BookmarkLocationRequested;
+    public event Action<OcrRecord>? OcrBookmarkCreationRequested;
+    public event Action<OcrRecord, Bookmark>? OcrCrossPageAttachRequested;
 
     [ObservableProperty]
     private decimal _annotationTextFontSize = 11;
@@ -128,12 +139,6 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _hasPendingOcr;
 
-    private double _pendingOcrX;
-    private double _pendingOcrY;
-    private double _pendingOcrWidth;
-    private double _pendingOcrHeight;
-    private double _pendingOcrZoom;
-    private string? _pendingCapturePath;
 
     [ObservableProperty]
     private bool _enablePagePreviews = true;
@@ -198,6 +203,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly HashSet<Guid> _expandedBookmarkIds = new();
 
     public ObservableCollection<OcrRecord> OcrHistory { get; } = new();
+    public ObservableCollection<OcrRecord> OcrProcessingQueue { get; } = new();
     public ObservableCollection<OcrRecord> CurrentPageOcrRecords { get; } = new();
     public ObservableCollection<PdfAnnotationInfo> CurrentPageAnnotations { get; } = new();
     public ObservableCollection<PagePreview> PagePreviews { get; } = new();
@@ -235,6 +241,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _ttsVoiceModels = CloneVoiceModels(settings.TtsVoiceModels);
         _automationService = new LocalAutomationService(CreateReaderSettings);
         _automationService.ImportCompleted += AutomationImportCompleted;
+        _ocrQueueWorker = Task.Run(ProcessOcrQueueAsync);
         if (settings.EnableLocalApi)
         {
             _automationService.Start(settings.LocalApiPort);
@@ -356,17 +363,27 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool HasNextReadingPage => !IsAnnotationMode && !CanCapture && NextReadingPageImage is not null;
     public bool IsContinuousReadingMode => HasDocument && !IsAnnotationMode && !CanCapture;
     public bool CanCancelOcr => IsOcrBusy || HasPendingOcr;
-    public bool CanSelectCaptureMode => HasDocument && IsOcrEnabled && !IsBusy && !IsOcrBusy && !IsDocumentReadOnly;
+    public bool CanSelectCaptureMode => HasDocument && IsOcrEnabled && !IsBusy && !IsDocumentReadOnly;
     public bool CanCapture => CanSelectCaptureMode && (_captureOnce || IsContinuousCapture);
-    public bool CanCancelCapture => (_captureOnce || IsContinuousCapture) && !IsOcrBusy;
+    public bool CanCancelCapture => _captureOnce || IsContinuousCapture;
     public bool HasSelectedBookmark => SelectedBookmark is not null;
-    public bool CanAttachOcr => SelectedBookmark is not null
-        && SelectedOcrRecord is not null
+    public bool CanAttachOcr => SelectedOcrRecord is not null
+        && SelectedOcrRecord.IsPersisted
+        && SelectedOcrRecord.BookmarkId is null
+        && OcrProcessingQueue.Contains(SelectedOcrRecord)
         && !IsBusy && !IsDocumentReadOnly
         && !IsOcrBusy;
     public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is not null && !IsTtsBusy && !IsDocumentReadOnly;
     public bool CanClearOcr => HasDocument && SelectedOcrRecord is not null
+        && OcrProcessingQueue.Contains(SelectedOcrRecord)
+        && SelectedOcrRecord.BookmarkId is null
         && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsDocumentReadOnly;
+    public bool CanConfirmOcr => HasPendingOcr
+        && SelectedOcrRecord is not null
+        && !SelectedOcrRecord.IsProcessing
+        && !SelectedOcrRecord.IsPersisted
+        && !string.IsNullOrWhiteSpace(SelectedOcrRecord.Text)
+        && CanModifyDocument;
     public bool CanAnnotate => HasDocument && IsAnnotationMode
         && !IsBusy && !IsOcrBusy && !IsTtsBusy && !IsReadingCurrentPage && !IsDocumentReadOnly;
     public bool CanReadCurrentPage => HasDocument
@@ -1469,6 +1486,26 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         await ShowPageAsync(pageNumber - 1);
     }
 
+    public async Task GoToOcrRecordAsync(OcrRecord record)
+    {
+        if (!HasDocument || record.PdfDocumentId != _documentId)
+        {
+            return;
+        }
+
+        SelectedOcrRecord = record;
+        SelectedOcrHistoryRecord = record;
+        IsCurrentPageOcrVisible = true;
+        if (IsContinuousReadingMode)
+        {
+            NavigateContinuousReadingPage(record.PageNumber);
+        }
+        else
+        {
+            await ShowPageAsync(record.PageNumber - 1);
+        }
+    }
+
     public void SetCurrentReadingPage(int pageNumber)
     {
         if (!IsContinuousReadingMode || pageNumber < 1 || pageNumber > _pdfService.PageCount
@@ -1960,6 +1997,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanUndoAnnotationDelete));
         NotifyAnnotationSaveChanged();
         OcrHistory.Clear();
+        OcrProcessingQueue.Clear();
         Bookmarks.Clear();
         _deletedBookmarkHistory.Clear();
         OnPropertyChanged(nameof(CanUndoBookmarkDelete));
@@ -1973,6 +2011,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         var ocrRecords = await _ocrRepository.GetForDocumentAsync(_documentId);
         foreach (var record in ocrRecords)
         {
+            record.IsPersisted = true;
             record.RefreshAudioStatus();
             OcrHistory.Add(record);
         }
@@ -1992,6 +2031,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 OcrHistory.Clear();
                 foreach (var record in ocrRecords)
                 {
+                    record.IsPersisted = true;
                     record.RefreshAudioStatus();
                     OcrHistory.Add(record);
                 }
@@ -2019,6 +2059,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         RefreshBookmarkDisplayTree();
         RestoreBookmarkExpansionState();
+        RefreshOcrProcessingQueue();
         RefreshCurrentPageOcr();
         RefreshReadingPageOcr();
     }
@@ -2245,6 +2286,17 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         UpdateReadingPageOcrVisibility();
     }
 
+    private void RefreshOcrProcessingQueue()
+    {
+        OcrProcessingQueue.Clear();
+        foreach (var record in OcrHistory.Where(record => record.BookmarkId is null))
+        {
+            OcrProcessingQueue.Add(record);
+        }
+
+        OnPropertyChanged(nameof(CanClearOcr));
+    }
+
     private void RefreshReadingPageOcr()
     {
         foreach (var page in ReadingPages)
@@ -2446,6 +2498,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             await _ocrRepository.AttachToBookmarkAsync(record.Id, bookmark.Id);
             record.BookmarkId = bookmark.Id;
+            OcrProcessingQueue.Remove(record);
+            OnPropertyChanged(nameof(CanAttachOcr));
         }
 
         return records.Count;
@@ -2468,30 +2522,96 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
+        LocateBookmarkInTree(bookmark);
+        StatusMessage = $"已定位到第 {CurrentPageNumber} 页书签：{bookmark.Title}";
+    }
+
+    public void FindSelectedBookmark()
+    {
+        if (SelectedBookmark is null)
+        {
+            StatusMessage = "请先选择一个书签";
+            return;
+        }
+
+        LocateBookmarkInTree(SelectedBookmark);
+        StatusMessage = $"已定位书签：{SelectedBookmark.Title}";
+    }
+
+    public void FindBookmarkByName(string title)
+    {
+        if (!HasDocument)
+        {
+            StatusMessage = "请先打开一个 PDF 文档";
+            return;
+        }
+
+        var bookmark = Bookmarks
+            .SelectMany(EnumerateBookmarkTree)
+            .FirstOrDefault(item => item.Title.Contains(title.Trim(), StringComparison.OrdinalIgnoreCase));
+        if (bookmark is null)
+        {
+            StatusMessage = $"未找到书签：{title}";
+            return;
+        }
+
+        LocateBookmarkInTree(bookmark);
+        StatusMessage = $"已定位书签“{bookmark.Title}”，第 {bookmark.PageNumber} 页";
+    }
+
+    private void LocateBookmarkInTree(Bookmark bookmark)
+    {
         for (var parent = bookmark.Parent; parent is not null; parent = parent.Parent)
         {
             parent.IsExpanded = true;
+            _expandedBookmarkIds.Add(parent.Id);
         }
 
         SelectedBookmark = bookmark;
-        StatusMessage = $"已定位到第 {CurrentPageNumber} 页书签：{bookmark.Title}";
+        BookmarkLocationRequested?.Invoke(bookmark);
     }
 
     [RelayCommand]
     private async Task AttachOcrToBookmarkAsync()
     {
-        if (SelectedBookmark is null || SelectedOcrRecord is null || !CanModifyDocument || IsBusy)
+        if (!CanAttachOcr)
+        {
+            return;
+        }
+
+        var record = SelectedOcrRecord!;
+        var bookmark = SelectedBookmark;
+        if (bookmark is null)
+        {
+            OcrBookmarkCreationRequested?.Invoke(record);
+            return;
+        }
+
+        if (bookmark.PageNumber != record.PageNumber)
+        {
+            OcrCrossPageAttachRequested?.Invoke(record, bookmark);
+            return;
+        }
+
+        await AttachOcrToBookmarkAsync(record, bookmark);
+    }
+
+    public async Task AttachOcrToBookmarkAsync(OcrRecord record, Bookmark bookmark)
+    {
+        if (!CanAttachOcr || !ReferenceEquals(SelectedOcrRecord, record))
         {
             return;
         }
 
         try
         {
-            await SaveBookmarkAndAncestorsAsync(SelectedBookmark);
+            await SaveBookmarkAndAncestorsAsync(bookmark);
             await _ocrRepository.AttachToBookmarkAsync(
-                SelectedOcrRecord.Id,
-                SelectedBookmark.Id);
-            SelectedOcrRecord.BookmarkId = SelectedBookmark.Id;
+                record.Id,
+                bookmark.Id);
+            record.BookmarkId = bookmark.Id;
+            OcrProcessingQueue.Remove(record);
+            OnPropertyChanged(nameof(CanAttachOcr));
             RefreshBookmarkDisplayTree();
             StatusMessage = "OCR 已挂载到书签，书签已自动保存";
             NotifyBookmarkChanged();
@@ -2499,6 +2619,22 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         catch (Exception exception)
         {
             StatusMessage = $"挂载 OCR 失败: {exception.Message}";
+        }
+    }
+
+    public async Task CreateBookmarkForOcrAsync(OcrRecord record, string? title, int pageNumber)
+    {
+        if (!CanAttachOcr || !ReferenceEquals(SelectedOcrRecord, record))
+        {
+            return;
+        }
+
+        var previousBookmark = SelectedBookmark;
+        SelectedBookmark = null;
+        await CreateBookmarkAsync(title, pageNumber);
+        if (record.BookmarkId is null)
+        {
+            SelectedBookmark = previousBookmark;
         }
     }
 
@@ -2521,6 +2657,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             await SaveBookmarkAndAncestorsAsync(target);
             await _ocrRepository.AttachToBookmarkAsync(record.Id, target.Id);
             record.BookmarkId = target.Id;
+            OcrProcessingQueue.Remove(record);
+            OnPropertyChanged(nameof(CanAttachOcr));
             SelectedBookmark = target;
             SelectedOcrRecord = record;
             RefreshBookmarkDisplayTree();
@@ -2578,6 +2716,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             StatusMessage = $"修改书签名称失败: {exception.Message}";
         }
+    }
+
+    public IReadOnlyList<Bookmark> GetParentBookmarkCandidates(Bookmark bookmark)
+    {
+        return Bookmarks
+            .SelectMany(EnumerateBookmarkTree)
+            .Where(candidate => !ReferenceEquals(candidate, bookmark)
+                && !IsBookmarkInSubtree(bookmark, candidate))
+            .OrderBy(candidate => candidate.Title, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     public async Task MoveBookmarkAsync(Bookmark? dragged, Bookmark? target, bool asChild)
@@ -2780,9 +2928,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private Bookmark? FindBookmarkForCurrentPage()
+    private Bookmark? FindBookmarkForPage(int pageNumber)
     {
-        var pageNumber = _currentPage + 1;
         var candidates = Bookmarks
             .SelectMany(EnumerateBookmarkTree)
             .Where(bookmark => bookmark.PageNumber == pageNumber)
@@ -2802,6 +2949,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             .ThenBy(bookmark => bookmark.SortOrder)
             .First();
     }
+
+    private Bookmark? FindBookmarkForCurrentPage() => FindBookmarkForPage(_currentPage + 1);
 
     private static int GetBookmarkDepth(Bookmark bookmark)
     {
@@ -2876,62 +3025,122 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (HasPendingOcr)
-        {
-            DiscardPendingOcr();
-        }
-
-        var cancellation = BeginOcrCancellation();
         var captureZoom = _zoom;
+        string? capturePath = null;
         try
         {
-            IsOcrBusy = true;
-            StatusMessage = "正在识别选区...";
             await using var imageStream = await _pdfService.RenderPageRegionAsync(
-                _currentPage, x, y, width, height, captureZoom, cancellation.Token);
+                _currentPage, x, y, width, height, captureZoom, CancellationToken.None);
+            await using var imageBuffer = new MemoryStream();
+            await imageStream.CopyToAsync(imageBuffer);
+            var imageBytes = imageBuffer.ToArray();
             if (EnableOcrCaptureCache)
             {
+                await using var captureStream = new MemoryStream(imageBytes, writable: false);
                 LastCapturePath = await SaveDebugCaptureAsync(
-                    imageStream,
+                    captureStream,
                     _currentPage + 1,
                     OcrCaptureDirectory,
-                    cancellation.Token);
-                _pendingCapturePath = LastCapturePath;
+                    CancellationToken.None);
+                capturePath = LastCapturePath;
             }
             else
             {
                 LastCapturePath = "截图缓存未开启";
-                _pendingCapturePath = null;
             }
-            imageStream.Position = 0;
-            StatusMessage = EnableOcrCaptureCache
-                ? "选区截图已保存，正在识别..."
-                : "正在识别选区...";
-            var result = await _ocrService.RecognizeAsync(imageStream, cancellation.Token);
-            OcrText = string.IsNullOrWhiteSpace(result.Text) ? "选区内未识别到文本。" : result.Text;
-            OcrTitle = CreateDefaultOcrTitle(OcrText);
-            SetPendingOcr(x, y, width, height, captureZoom);
-            StatusMessage = $"选区 OCR 完成，识别到 {result.Lines.Count} 行，请确认后保存";
-        }
-        catch (OperationCanceledException)
-        {
-            DiscardPendingOcr();
-            StatusMessage = "OCR 已停止";
+            var pendingRecord = new OcrRecord
+            {
+                PdfDocumentId = _documentId,
+                PageNumber = _currentPage + 1,
+                X = x,
+                Y = y,
+                Width = width,
+                Height = height,
+                CaptureZoom = captureZoom,
+                Title = "OCR 识别中...",
+                Text = string.Empty,
+                CapturePath = capturePath,
+                CreatedAtUtc = DateTime.UtcNow,
+                IsPersisted = false,
+                IsProcessing = true,
+            };
+            OcrHistory.Insert(0, pendingRecord);
+            OcrProcessingQueue.Insert(0, pendingRecord);
+            SelectedOcrRecord = pendingRecord;
+            SelectedOcrHistoryRecord = pendingRecord;
+            RefreshCurrentPageOcr();
+            RefreshReadingPageOcr();
+            _ocrQueue.Enqueue(new OcrQueueJob(pendingRecord, imageBytes));
+            _ocrQueueSignal.Release();
+            HasPendingOcr = true;
+            StatusMessage = "选区已加入 OCR 队列";
         }
         catch (Exception exception)
         {
-            DiscardPendingOcr();
+            DeleteResource(capturePath);
             StatusMessage = $"选区 OCR 失败: {exception.Message}";
         }
-        finally
+        if (_captureOnce)
         {
-            EndOcrCancellation(cancellation);
-            IsOcrBusy = false;
-            if (_captureOnce)
+            _captureOnce = false;
+            NotifyCaptureChanged();
+        }
+    }
+
+    private async Task ProcessOcrQueueAsync()
+    {
+        try
+        {
+            while (await _ocrQueueSignal.WaitAsync(Timeout.Infinite, _ocrQueueCancellation.Token))
             {
-                _captureOnce = false;
-                NotifyCaptureChanged();
+                if (!_ocrQueue.TryDequeue(out var job))
+                {
+                    continue;
+                }
+
+                var cancellation = BeginOcrCancellation();
+                try
+                {
+                    IsOcrBusy = true;
+                    StatusMessage = "正在识别 OCR 队列...";
+                    await using var imageStream = new MemoryStream(job.ImageBytes, writable: false);
+                    var result = await _ocrService.RecognizeAsync(imageStream, cancellation.Token);
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        job.Record.Text = string.IsNullOrWhiteSpace(result.Text) ? "选区内未识别到文本。" : result.Text;
+                        job.Record.Title = CreateDefaultOcrTitle(job.Record.Text);
+                        job.Record.IsProcessing = false;
+                        OnPropertyChanged(nameof(CanConfirmOcr));
+                        if (ReferenceEquals(SelectedOcrRecord, job.Record))
+                        {
+                            OcrText = job.Record.Text;
+                            OcrTitle = job.Record.Title;
+                        }
+                        RefreshCurrentPageOcr();
+                        RefreshReadingPageOcr();
+                        StatusMessage = $"OCR 完成，识别到 {result.Lines.Count} 行，请确认后保存";
+                    });
+                }
+                catch (OperationCanceledException)
+                {
+                    await Dispatcher.UIThread.InvokeAsync(() =>
+                    {
+                        DeleteResource(job.Record.CapturePath);
+                        OcrHistory.Remove(job.Record);
+                        OcrProcessingQueue.Remove(job.Record);
+                        HasPendingOcr = OcrHistory.Any(item => !item.IsPersisted);
+                        OnPropertyChanged(nameof(CanConfirmOcr));
+                    });
+                }
+                finally
+                {
+                    EndOcrCancellation(cancellation);
+                    IsOcrBusy = false;
+                }
             }
+        }
+        catch (OperationCanceledException)
+        {
         }
     }
 
@@ -2943,7 +3152,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        _ocrCancellation?.Cancel();
+        lock (_ocrCancellationLock)
+        {
+            foreach (var cancellation in _ocrCancellations.ToList())
+            {
+                cancellation.Cancel();
+            }
+        }
         DiscardPendingOcr();
         OcrText = "识别结果已取消，未保存任何结果。";
         StatusMessage = IsOcrBusy ? "正在停止 OCR..." : "OCR 结果已取消";
@@ -2952,15 +3167,19 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private CancellationTokenSource BeginOcrCancellation()
     {
         var cancellation = new CancellationTokenSource();
-        _ocrCancellation = cancellation;
+        lock (_ocrCancellationLock)
+        {
+            _ocrCancellations.Add(cancellation);
+        }
+
         return cancellation;
     }
 
     private void EndOcrCancellation(CancellationTokenSource cancellation)
     {
-        if (ReferenceEquals(_ocrCancellation, cancellation))
+        lock (_ocrCancellationLock)
         {
-            _ocrCancellation = null;
+            _ocrCancellations.Remove(cancellation);
         }
 
         cancellation.Dispose();
@@ -3246,7 +3465,10 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task SaveOcrAsync()
     {
-        if (!HasPendingOcr || string.IsNullOrWhiteSpace(OcrText) || !CanModifyDocument)
+        var record = SelectedOcrHistoryRecord ?? SelectedOcrRecord;
+        if (!HasPendingOcr || record is null || record.IsProcessing || record.IsPersisted
+            || !OcrProcessingQueue.Contains(record)
+            || string.IsNullOrWhiteSpace(OcrText) || !CanModifyDocument)
         {
             return;
         }
@@ -3254,34 +3476,23 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             IsOcrBusy = true;
-            var matchingBookmark = FindBookmarkForCurrentPage();
-            var record = new OcrRecord
-            {
-                PdfDocumentId = _documentId,
-                BookmarkId = matchingBookmark?.Id,
-                PageNumber = _currentPage + 1,
-                X = _pendingOcrX,
-                Y = _pendingOcrY,
-                Width = _pendingOcrWidth,
-                Height = _pendingOcrHeight,
-                CaptureZoom = _pendingOcrZoom,
-                Title = string.IsNullOrWhiteSpace(OcrTitle)
-                    ? CreateDefaultOcrTitle(OcrText)
-                    : OcrTitle.Trim(),
-                Text = OcrText.Trim(),
-                CapturePath = _pendingCapturePath,
-                CreatedAtUtc = DateTime.UtcNow,
-            };
+            var matchingBookmark = FindBookmarkForPage(record.PageNumber);
+            record.BookmarkId = matchingBookmark?.Id;
+            record.Title = string.IsNullOrWhiteSpace(OcrTitle) ? CreateDefaultOcrTitle(OcrText) : OcrTitle.Trim();
+            record.Text = OcrText.Trim();
             await _ocrRepository.AddAsync(record);
-            OcrHistory.Insert(0, record);
+            record.IsPersisted = true;
+            OcrProcessingQueue.Remove(record);
             SelectedOcrRecord = record;
             OcrTitle = record.Title;
             RefreshCurrentPageOcr();
             RefreshReadingPageOcr();
             RefreshBookmarkDisplayTree();
             GeneratedAudioPath = "尚未生成音频";
-            _pendingCapturePath = null;
-            HasPendingOcr = false;
+            HasPendingOcr = OcrHistory.Any(item => !item.IsPersisted);
+            RefreshOcrProcessingQueue();
+            SelectNextOcrQueueItem(record);
+            NotifyBookmarkChanged();
             StatusMessage = matchingBookmark is null
                 ? "OCR 结果已保存，请选择书签进行挂载"
                 : $"OCR 结果已保存并挂载到书签：{matchingBookmark.Title}";
@@ -3296,25 +3507,44 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
-    private void SetPendingOcr(double x, double y, double width, double height, double captureZoom)
+    private void SelectNextOcrQueueItem(OcrRecord completedRecord)
     {
-        _pendingOcrX = x;
-        _pendingOcrY = y;
-        _pendingOcrWidth = width;
-        _pendingOcrHeight = height;
-        _pendingOcrZoom = captureZoom;
-        HasPendingOcr = true;
+        var next = OcrProcessingQueue.FirstOrDefault(item => !item.IsProcessing && !item.IsPersisted);
+        if (next is null)
+        {
+            if (ReferenceEquals(SelectedOcrHistoryRecord, completedRecord))
+            {
+                SelectedOcrHistoryRecord = null;
+            }
+
+            return;
+        }
+
+        SelectedOcrHistoryRecord = next;
+        SelectedOcrRecord = next;
     }
 
     private void DiscardPendingOcr()
     {
-        if (!string.IsNullOrWhiteSpace(_pendingCapturePath))
+        var record = SelectedOcrRecord;
+        if (record is not null && !record.IsPersisted)
         {
-            DeleteResource(_pendingCapturePath);
-            _pendingCapturePath = null;
+            DeleteResource(record.CapturePath);
+            OcrHistory.Remove(record);
+            OcrProcessingQueue.Remove(record);
+            if (ReferenceEquals(SelectedOcrHistoryRecord, record))
+            {
+                SelectedOcrHistoryRecord = null;
+            }
         }
 
-        HasPendingOcr = false;
+        HasPendingOcr = OcrHistory.Any(item => !item.IsPersisted);
+        if (ReferenceEquals(SelectedOcrRecord, record))
+        {
+            SelectedOcrRecord = OcrHistory.FirstOrDefault(item => !item.IsPersisted);
+        }
+        RefreshCurrentPageOcr();
+        RefreshReadingPageOcr();
     }
 
     private static string CreateDefaultOcrTitle(string text)
@@ -3970,6 +4200,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         NotifyCaptureChanged();
         NotifyBookmarkChanged();
         OnPropertyChanged(nameof(CanClearOcr));
+        OnPropertyChanged(nameof(CanConfirmOcr));
     }
 
     partial void OnIsTtsBusyChanged(bool value)
@@ -4109,6 +4340,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             SelectedOcrRecord = value;
         }
+
+        OnPropertyChanged(nameof(CanConfirmOcr));
+        OnPropertyChanged(nameof(CanClearOcr));
     }
 
     private void NotifyBookmarkChanged()
@@ -4160,7 +4394,15 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public void Dispose()
     {
-        _ocrCancellation?.Cancel();
+        _ocrQueueCancellation.Cancel();
+        _ocrQueueSignal.Release();
+        lock (_ocrCancellationLock)
+        {
+            foreach (var cancellation in _ocrCancellations.ToList())
+            {
+                cancellation.Cancel();
+            }
+        }
         _readingCancellation?.Cancel();
         _audioPlaybackService.PlaybackStateChanged -= AudioPlaybackStateChanged;
         _automationService.ImportCompleted -= AutomationImportCompleted;

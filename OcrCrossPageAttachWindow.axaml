@@ -1,0 +1,23 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="PDFReader.OcrCrossPageAttachWindow"
+        Title="跨页挂载 OCR"
+        Width="500"
+        Height="235"
+        MinWidth="420"
+        MinHeight="210"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="*,Auto" Background="#F5F6F8">
+        <StackPanel Margin="24" Spacing="10">
+            <TextBlock Text="OCR 与选中书签不在同一页" FontSize="17" FontWeight="SemiBold" Foreground="#303943" />
+            <TextBlock x:Name="MessageText" TextWrapping="Wrap" Foreground="#4A5560" />
+        </StackPanel>
+        <Border Grid.Row="1" Background="White" BorderBrush="#D9DDE2" BorderThickness="0,1,0,0" Padding="20,14">
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="取消" Click="CancelClick" Padding="14,7" />
+                <Button Content="创建书签" Click="CreateBookmarkClick" Padding="14,7" />
+                <Button Content="跨页挂载" Click="AttachCrossPageClick" Padding="14,7" Background="#D99A21" Foreground="White" />
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

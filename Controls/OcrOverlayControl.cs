@@ -66,9 +66,9 @@ public sealed class OcrOverlayControl : Canvas
             {
                 Width = record.DisplayWidth,
                 Height = record.DisplayHeight,
-                BorderBrush = new SolidColorBrush(Color.Parse("#2B6CB0")),
+                BorderBrush = new SolidColorBrush(Color.Parse(record.IsPersisted ? "#2B6CB0" : "#D97706")),
                 BorderThickness = new Thickness(2),
-                Background = new SolidColorBrush(Color.Parse("#224A90E2")),
+                Background = new SolidColorBrush(Color.Parse(record.IsPersisted ? "#224A90E2" : "#22F59E0B")),
                 IsHitTestVisible = false,
             };
             SetLeft(box, record.DisplayX);

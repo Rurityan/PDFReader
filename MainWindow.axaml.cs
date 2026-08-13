@@ -50,6 +50,9 @@ public partial class MainWindow : Window
         ViewModel.CurrentPageOcrRecords.CollectionChanged += CurrentPageOcrRecordsChanged;
         ViewModel.CurrentPageAnnotations.CollectionChanged += CurrentPageAnnotationsChanged;
         ViewModel.Bookmarks.CollectionChanged += BookmarkTreeDataChanged;
+        ViewModel.BookmarkLocationRequested += LocateBookmarkInTree;
+        ViewModel.OcrBookmarkCreationRequested += CreateBookmarkForOcr;
+        ViewModel.OcrCrossPageAttachRequested += ResolveCrossPageOcrAttach;
         ViewModel.ContinuousReadingPageRequested += ScrollContinuousReadingToPage;
         ContinuousReadingList.AddHandler(
             ScrollViewer.ScrollChangedEvent,
@@ -759,8 +762,8 @@ public partial class MainWindow : Window
             {
                 Width = record.DisplayWidth,
                 Height = record.DisplayHeight,
-                Background = new SolidColorBrush(Color.Parse("#223B82C4")),
-                BorderBrush = new SolidColorBrush(Color.Parse("#5570A9D8")),
+                Background = new SolidColorBrush(Color.Parse(record.IsPersisted ? "#223B82C4" : "#22F59E0B")),
+                BorderBrush = new SolidColorBrush(Color.Parse(record.IsPersisted ? "#5570A9D8" : "#D97706")),
                 BorderThickness = new Thickness(1),
                 CornerRadius = new CornerRadius(2),
                 IsHitTestVisible = false,
@@ -1341,12 +1344,131 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private async void FindBookmarkByNameClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!ViewModel.HasDocument)
+        {
+            ViewModel.SetStatus("请先打开一个 PDF 文档");
+            return;
+        }
+
+        var dialog = new BookmarkNameWindow();
+        var title = await dialog.ShowDialog<string?>(this);
+        if (!string.IsNullOrWhiteSpace(title))
+        {
+            ViewModel.FindBookmarkByName(title);
+        }
+
+        e.Handled = true;
+    }
+
+    private void LocateBookmarkInTree(Bookmark bookmark)
+    {
+        var attempts = 0;
+        void TryLocate()
+        {
+            attempts++;
+            foreach (var parent in GetBookmarkAncestors(bookmark))
+            {
+                var parentItem = BookmarkTree.GetVisualDescendants()
+                    .OfType<TreeViewItem>()
+                    .FirstOrDefault(candidate => ReferenceEquals(candidate.DataContext, parent));
+                if (parentItem is not null)
+                {
+                    parentItem.IsExpanded = true;
+                }
+            }
+
+            var item = BookmarkTree.GetVisualDescendants()
+                .OfType<TreeViewItem>()
+                .FirstOrDefault(candidate => ReferenceEquals(candidate.DataContext, bookmark));
+            if (item is not null)
+            {
+                item.IsSelected = true;
+                item.BringIntoView();
+                return;
+            }
+
+            if (attempts < 8)
+            {
+                Dispatcher.UIThread.Post(TryLocate, DispatcherPriority.Loaded);
+            }
+        }
+
+        Dispatcher.UIThread.Post(TryLocate, DispatcherPriority.Loaded);
+    }
+
+    private async void CreateBookmarkForOcr(OcrRecord record)
+    {
+        var dialog = new BookmarkCreateWindow(record.PageNumber, ViewModel.DocumentPageCount);
+        var request = await dialog.ShowDialog<BookmarkCreationRequest?>(this);
+        if (request is not null)
+        {
+            await ViewModel.CreateBookmarkForOcrAsync(record, request.Title, request.PageNumber);
+        }
+    }
+
+    private async void ResolveCrossPageOcrAttach(OcrRecord record, Bookmark bookmark)
+    {
+        var dialog = new OcrCrossPageAttachWindow(record.PageNumber, bookmark.Title, bookmark.PageNumber);
+        var action = await dialog.ShowDialog<OcrCrossPageAttachAction>(this);
+        if (action == OcrCrossPageAttachAction.AttachCrossPage)
+        {
+            await ViewModel.AttachOcrToBookmarkAsync(record, bookmark);
+        }
+        else if (action == OcrCrossPageAttachAction.CreateBookmark)
+        {
+            CreateBookmarkForOcr(record);
+        }
+    }
+
+    private static IEnumerable<Bookmark> GetBookmarkAncestors(Bookmark bookmark)
+    {
+        var ancestors = new Stack<Bookmark>();
+        for (var parent = bookmark.Parent; parent is not null; parent = parent.Parent)
+        {
+            ancestors.Push(parent);
+        }
+
+        return ancestors;
+    }
+
     private async void BookmarkDoubleTapped(object? sender, TappedEventArgs e)
     {
         if (sender is TreeView treeView && treeView.SelectedItem is Bookmark bookmark)
         {
             await ViewModel.GoToBookmarkAsync(bookmark);
         }
+    }
+
+    private async void AttachBookmarkAsChildClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var bookmark = GetBookmarkFromMenu(sender);
+        if (bookmark is null)
+        {
+            return;
+        }
+
+        var candidates = ViewModel.GetParentBookmarkCandidates(bookmark);
+        var dialog = new BookmarkParentPickerWindow(candidates);
+        var parent = await dialog.ShowDialog<Bookmark?>(this);
+        if (parent is not null)
+        {
+            await ViewModel.MoveBookmarkAsync(bookmark, parent, asChild: true);
+        }
+
+        e.Handled = true;
+    }
+
+    private async void OcrHistoryDoubleTapped(object? sender, TappedEventArgs e)
+    {
+        if ((sender as ListBox)?.SelectedItem is not OcrRecord record)
+        {
+            return;
+        }
+
+        await ViewModel.GoToOcrRecordAsync(record);
+        e.Handled = true;
     }
 
     private async void BookmarkTitlePointerReleased(object? sender, PointerReleasedEventArgs e)
@@ -1385,6 +1507,10 @@ public partial class MainWindow : Window
         var ocrRecord = FindOcrRecord(e.Source);
         if (bookmark is null && ocrRecord is null)
         {
+            BookmarkTree.SelectedItem = null;
+            ViewModel.SelectedBookmark = null;
+            _bookmarkDragCandidate = null;
+            _ocrDragCandidate = null;
             return;
         }
 
@@ -1928,6 +2054,12 @@ public partial class MainWindow : Window
         var record = ViewModel.SelectedOcrRecord;
         if (record is null)
         {
+            return;
+        }
+
+        if (record.BookmarkId is not null)
+        {
+            e.Handled = true;
             return;
         }
 

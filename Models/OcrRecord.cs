@@ -19,8 +19,39 @@ public sealed class OcrRecord : INotifyPropertyChanged
     public double Width { get; set; }
     public double Height { get; set; }
     public double CaptureZoom { get; set; } = 1.0;
-    public string Title { get; set; } = string.Empty;
-    public string Text { get; set; } = string.Empty;
+    private string _title = string.Empty;
+
+    public string Title
+    {
+        get => _title;
+        set
+        {
+            if (string.Equals(_title, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _title = value;
+            OnPropertyChanged();
+        }
+    }
+
+    private string _text = string.Empty;
+
+    public string Text
+    {
+        get => _text;
+        set
+        {
+            if (string.Equals(_text, value, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            _text = value;
+            OnPropertyChanged();
+        }
+    }
     public string? CapturePath { get; set; }
     public bool IsExternalImport { get; set; }
     public DateTime CreatedAtUtc { get; set; }
@@ -33,10 +64,62 @@ public sealed class OcrRecord : INotifyPropertyChanged
     public bool HasAudio { get; private set; }
 
     [NotMapped]
+    private bool _isPersisted;
+
+    [NotMapped]
+    public bool IsPersisted
+    {
+        get => _isPersisted;
+        set
+        {
+            if (_isPersisted == value)
+            {
+                return;
+            }
+
+            _isPersisted = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsPendingSave));
+            OnPropertyChanged(nameof(QueueStatusText));
+        }
+    }
+
+    [NotMapped]
+    private bool _isProcessing;
+
+    [NotMapped]
+    public bool IsProcessing
+    {
+        get => _isProcessing;
+        set
+        {
+            if (_isProcessing == value)
+            {
+                return;
+            }
+
+            _isProcessing = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsPendingSave));
+            OnPropertyChanged(nameof(QueueStatusText));
+        }
+    }
+
+    [NotMapped]
+    public bool IsPendingSave => !IsPersisted && !IsProcessing;
+
+    [NotMapped]
     public string? LatestAudioPath { get; private set; }
 
     [NotMapped]
     public string AudioStatusText => HasAudio ? "音频：已生成" : "音频：未生成";
+
+    [NotMapped]
+    public string QueueStatusText => IsProcessing
+        ? "识别中..."
+        : IsPersisted && BookmarkId is null
+            ? "待挂载"
+            : "待确认";
 
     [NotMapped]
     public double DisplayX { get; private set; }
