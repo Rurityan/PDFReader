@@ -637,7 +637,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await ReadPageAudioAsync(_currentPage, "朗读本页");
+        try
+        {
+            await ReadPageAudioAsync(_currentPage, "朗读本页");
+        }
+        catch (OperationCanceledException)
+        {
+            StatusMessage = "朗读已停止";
+        }
     }
 
     private async Task ReadDocumentAsync()
@@ -3486,7 +3493,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void StopAudio()
     {
-        _audioPlaybackService.Stop();
+        var cancellation = _readingCancellation;
+        if (cancellation is not null)
+        {
+            cancellation.Cancel();
+        }
+        else
+        {
+            _audioPlaybackService.Stop();
+        }
+
         SetAudioPlaying(false);
         SetAudioPaused(false);
         StatusMessage = "音频已停止";
