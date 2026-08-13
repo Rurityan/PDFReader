@@ -33,7 +33,7 @@ Windows ARM64 使用[项目提供的 ARM64 wheel](https://github.com/Rurityan/wi
 
 ```powershell
 py -3.11 -m venv .venv-arm64
-.\.venv\Scripts\python.exe -m pip install --no-index --no-deps --find-links .\py-libs\win-arm64 `
+.\.venv-arm64\Scripts\python.exe -m pip install --no-index --no-deps --find-links .\py-libs\win-arm64 `
     numpy==2.4.6 PyMuPDF==1.28.2 onnxruntime-directml==1.30.0 `
     opencv-python-headless==4.14.0.94 pyclipper==1.4.0
 .\.venv-arm64\Scripts\python.exe -m pip install -r .\Scripts\requirements-ocr-arm64.txt
@@ -130,7 +130,7 @@ dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p
 .\Scripts\build-release.ps1 -RuntimeIdentifier both -DotnetPath C:\path\to\dotnet10\dotnet.exe -BuildInstaller
 ```
 
-最终安装包为 `PDFReader-1.1.3-x64-Setup.exe` 和 `PDFReader-1.1.3-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
+最终安装包名称会使用当前版本号，例如 `PDFReader-1.1.5-x64-Setup.exe` 和 `PDFReader-1.1.5-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
 
 ## 说明
 
