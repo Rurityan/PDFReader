@@ -24,3 +24,6 @@ appsettings.Local.json
 /tmp-py-arm64-check/
 /ocr-arm64-final.png
 /ocr-test-text.png
+/build/
+tmp-pikepdf-build/
+external-libs-dist/

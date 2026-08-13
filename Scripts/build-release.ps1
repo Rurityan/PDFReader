@@ -33,10 +33,20 @@ function Publish-Runtime {
     if (-not (Test-Path (Join-Path $pythonEnvironment "Scripts\python.exe"))) {
         throw "Python environment is missing Scripts\python.exe: $pythonEnvironment"
     }
+    $pythonExecutable = Join-Path $pythonEnvironment "Scripts\python.exe"
     if ($TargetRuntime -eq "win-x64") {
-        & (Join-Path $pythonEnvironment "Scripts\python.exe") -c "import pikepdf, miniaudio"
+        & $pythonExecutable -c "import pikepdf, miniaudio"
         if ($LASTEXITCODE -ne 0) {
-            throw "The x64 Python environment is missing Acrobat export dependencies. Run: .venv\Scripts\python.exe -m pip install -r Scripts\requirements-ocr.txt"
+            throw "The x64 Python environment is missing Acrobat export dependencies. Run: .venv\Scripts\python.exe -m pip install -r Scripts/requirements-ocr.txt"
+        }
+    } else {
+        & $pythonExecutable -c "import cv2, numpy, onnxruntime, pyclipper, fitz"
+        if ($LASTEXITCODE -ne 0) {
+            throw "The ARM64 Python environment is missing an OCR dependency. Install Scripts/requirements-ocr-arm64.txt and the native wheels from py-libs/win-arm64."
+        }
+        & $pythonExecutable -c "import pikepdf, miniaudio"
+        if ($LASTEXITCODE -ne 0) {
+            throw "The ARM64 Python environment is missing Acrobat export dependencies. Install Scripts/requirements-rich-media-arm64.txt and the native wheels from py-libs/win-arm64."
         }
     }
 

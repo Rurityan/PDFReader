@@ -10,8 +10,8 @@ try:
     import miniaudio
 except ImportError as error:
     raise RuntimeError(
-        "Adobe Acrobat 富媒体导出需要 pikepdf 和 miniaudio。x64 版本应通过安装包随附；"
-        "开发环境可执行 python -m pip install -r Scripts/requirements-rich-media.txt。"
+        "Adobe Acrobat 富媒体导出需要 pikepdf 和 miniaudio。请安装对应架构的富媒体依赖清单："
+        "x64 使用 Scripts/requirements-rich-media.txt，ARM64 使用 Scripts/requirements-rich-media-arm64.txt。"
     ) from error
 
 

@@ -293,6 +293,8 @@ ARM64 Windows 发布使用独立输出目录和原生 ARM64 Python 虚拟环境 
 
 安装包会将对应架构的 Python、ONNX Runtime、OCR worker 和 `ocr_model` 一起安装；x64 与 ARM64 安装包可共存。卸载时会询问是否删除 `user_data`；选择保留即可保留数据库、设置、截图和语音资源。
 
+ARM64 打包会从 `py-libs/win-arm64` 安装原生 wheel。`miniaudio`、`cffi` 和 `pikepdf` 已通过 Visual Studio ARM64 工具链构建并验证可安装。ARM64 pikepdf wheel 内置 qpdf 12.2.0、zlib 和 MSVC 运行库；发布脚本会同时检查 OCR 模块以及 `pikepdf`、`miniaudio`，缺少任一依赖就停止打包。
+
 OCR 服务默认使用项目根目录下的：
 
 ```text
@@ -307,7 +309,7 @@ python -m pip install -r Scripts/requirements-ocr.txt
 
 默认模型目录为应用目录下的 `ocr_model/`，内置官方 PP-OCRv5 server ONNX 模型：`det.onnx`、`rec.onnx` 和识别模型的 `inference.yml`（也可使用 `ppocr_keys_v1.txt`）。该组合面向高准确率中文、繁体中文、英文和日文识别；检测长边默认按 960 像素预处理，识别输入固定高 48 像素。设备选择通过 `PDFREADER_OCR_DEVICE` 控制：`auto` 默认优先 DirectML，`cpu` 强制 CPU，`directml` 强制 DirectML。也可以用 `PDFREADER_OCR_MODEL_DIR`、`PDFREADER_OCR_DET_MODEL`、`PDFREADER_OCR_REC_MODEL` 和 `PDFREADER_OCR_DICTIONARY` 覆盖资源路径。
 
-Adobe Acrobat 富媒体导出通过 `Scripts/rich_media_worker.py`、`pikepdf` 和 `miniaudio` 写入 PDF 标准 Sound Annotation；普通启动、OCR、标注保存和 PDFReader 全量导出不加载这些库。x64 的 `requirements-ocr.txt` 和安装包已包含这些依赖，发布脚本会校验 `pikepdf` 可被导入。MP3 会在导出时解码为 44100 Hz、单声道、16-bit Signed PCM，以避免 Acrobat 将 MP3 字节误当采样数据而播放噪声。同一 OCR 区域有多个音频时，按钮会横向错开；按钮位于 OCR 区域右上角，尺寸约 14-20 pt 并带半透明显示；PDF 坐标会从页面左上原点转换为 PDF 左下原点。导出的音频会作为 PDF 附件保存，并在对应 OCR 区域生成可由 Acrobat 识别的声音注释；PDFReader 专用 OCR 清单也会一并保留。`pikepdf 9.10.2` 暂无 Windows ARM64 官方 wheel，因此 ARM64 发布包不包含该依赖，调用导出时会显示安装提示。
+Adobe Acrobat 富媒体导出通过 `Scripts/rich_media_worker.py`、`pikepdf` 和 `miniaudio` 写入 PDF 标准 Sound Annotation；普通启动、OCR、标注保存和 PDFReader 全量导出不加载这些库。x64 和 ARM64 的对应依赖清单与安装包均包含这些依赖，发布脚本会校验 `pikepdf` 和 `miniaudio` 可被导入。ARM64 pikepdf wheel 内置 qpdf 12.2.0、zlib 和 MSVC 运行库。MP3 会在导出时解码为 44100 Hz、单声道、16-bit Signed PCM，以避免 Acrobat 将 MP3 字节误当采样数据而播放噪声。同一 OCR 区域有多个音频时，按钮会横向错开；按钮位于 OCR 区域右上角，尺寸约 14-20 pt 并带半透明显示；PDF 坐标会从页面左上原点转换为 PDF 左下原点。导出的音频会作为 PDF 附件保存，并在对应 OCR 区域生成可由 Acrobat 识别的声音注释；PDFReader 专用 OCR 清单也会一并保留。
 
 建议验证以下流程：
 

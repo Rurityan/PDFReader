@@ -11,6 +11,14 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- Native dependency source trees are build inputs, not application code. -->
+    <Compile Remove="tmp-pikepdf-build\**\*.cs" />
+    <Compile Remove="external-libs-dist\**\*.cs" />
+    <None Remove="tmp-pikepdf-build\**\*" />
+    <None Remove="external-libs-dist\**\*" />
+  </ItemGroup>
+
+  <ItemGroup>
     <PackageReference Include="Avalonia" Version="12.1.1" />
     <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
     <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
@@ -44,6 +52,10 @@
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
     <None Update="Scripts\requirements-ocr-arm64.txt">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </None>
+    <None Update="Scripts\requirements-rich-media-arm64.txt">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>

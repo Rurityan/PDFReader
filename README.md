@@ -37,9 +37,10 @@ py -3.11 -m venv .venv-arm64
     numpy==2.4.6 PyMuPDF==1.28.2 onnxruntime-directml==1.30.0 `
     opencv-python-headless==4.14.0.94 pyclipper==1.4.0
 .\.venv-arm64\Scripts\python.exe -m pip install -r .\Scripts\requirements-ocr-arm64.txt
+.\.venv-arm64\Scripts\python.exe -m pip install --no-index --no-deps --find-links .\py-libs\win-arm64 -r .\Scripts\requirements-rich-media-arm64.txt
 ```
 
-ARM64 wheel 包含原生 `cv2`、`pyclipper`、ONNX Runtime DirectML 和 PyMuPDF；OCR 默认使用 DirectML，失败时回退 CPU。
+ARM64 wheel 包含原生 `cv2`、`pyclipper`、ONNX Runtime DirectML、PyMuPDF、`miniaudio` 和已完成 ARM64 原生构建的 `pikepdf`。OCR 默认使用 DirectML，失败时回退 CPU。
 
 可通过 `PDFREADER_PYTHON` 指向其他 Python 解释器。OCR 设备环境变量为 `PDFREADER_OCR_DEVICE`：`auto`（默认，优先 DirectML）、`directml` 或 `cpu`。
 
@@ -90,7 +91,7 @@ user_data/
 
 本地自动化接口默认关闭；在设置页启用并配置端口后，外部程序通过本地 Token 和 `X-PDFReader-Token` 请求头批量导入 OCR 和已有音频。接口只监听本机，外部程序不应直接写入 `reader.db`。完整字段约定、错误响应和自动化示例见 [REST_API.md](REST_API.md)。
 
-“文件”菜单中的“导出 Adobe Acrobat 富媒体 PDF”会将已有 VOC 音频嵌入 PDF，并在对应 OCR 区域写入标准声音注释，供 Acrobat 识别和播放。x64 安装包已包含 `pikepdf` 和 `miniaudio`；这些库仅在执行导出时加载。当前官方 `pikepdf` 没有 Windows ARM64 wheel，因此 ARM64 安装包不包含此功能所需依赖。
+“文件”菜单中的“导出 Adobe Acrobat 富媒体 PDF”会将已有 VOC 音频嵌入 PDF，并在对应 OCR 区域写入标准声音注释，供 Acrobat 识别和播放。x64 和 ARM64 安装包均包含对应架构的 `pikepdf` 与 `miniaudio`；这些库仅在执行导出时加载。ARM64 `pikepdf` wheel 内置 qpdf 12.2.0、zlib 和所需 MSVC 运行库，不需要额外安装 qpdf。
 
 ```json
 {
@@ -129,6 +130,8 @@ dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p
 .\Scripts\build-release.ps1 -RuntimeIdentifier win-arm64 -DotnetPath C:\path\to\dotnet10\dotnet.exe -BuildInstaller
 .\Scripts\build-release.ps1 -RuntimeIdentifier both -DotnetPath C:\path\to\dotnet10\dotnet.exe -BuildInstaller
 ```
+
+ARM64 打包选项会使用 `.venv-arm64` 和 `py-libs/win-arm64` 中的原生 wheel，并在发布前检查 OCR 与 Acrobat 富媒体依赖。当前 ARM64 wheel 清单包括 `numpy`、`opencv-python-headless`、`pyclipper`、`onnxruntime-directml`、`PyMuPDF`、`miniaudio`、`cffi` 和已自行编译的 `pikepdf`。pikepdf wheel 自带 qpdf 12.2.0、zlib 和 MSVC 运行库。
 
 最终安装包名称会使用当前版本号，例如 `PDFReader-1.1.5-x64-Setup.exe` 和 `PDFReader-1.1.5-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
 
