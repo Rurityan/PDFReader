@@ -56,8 +56,58 @@ function Publish-Runtime {
     & $dotnet publish .\PDFReader.csproj -c Release -r $TargetRuntime --self-contained true `
         -p:DebugType=None -p:DebugSymbols=false -o $publishDirectory
 
+    # NuGet's LibVLC package contains binaries for every Windows architecture.
+    # Keep only the architecture selected for this release.
+    $libVlcRoot = Join-Path $publishDirectory "libvlc"
+    if (Test-Path $libVlcRoot) {
+        Get-ChildItem $libVlcRoot -Directory | Where-Object { $_.Name -ne $TargetRuntime } |
+            Remove-Item -Recurse -Force
+    }
+
+    # dotnet publish can still copy native debug symbols and import libraries
+    # from third-party packages even when managed symbols are disabled.
+    Get-ChildItem $publishDirectory -Recurse -File -Include *.pdb,*.lib |
+        Remove-Item -Force
+    Get-ChildItem $publishDirectory -File -Filter "MuPDFCore.NativeAssets.*" |
+        Where-Object { $_.Name -ne "MuPDFCore.NativeAssets.Win-$($TargetRuntime.Substring(4)).dll" } |
+        Remove-Item -Force
+
     $packagedPython = Join-Path $publishDirectory ".venv"
-    Copy-Item -LiteralPath $pythonEnvironment -Destination $packagedPython -Recurse -Force
+    # Copy the interpreter and standard library, but never the complete
+    # development site-packages tree. It may contain old Paddle/model tooling.
+    & robocopy $pythonEnvironment $packagedPython /E /XD site-packages /NFL /NDL /NJH /NJS /NP
+    if ($LASTEXITCODE -gt 7) {
+        throw "Failed to copy the Python runtime with robocopy (exit code $LASTEXITCODE)."
+    }
+
+    # Current workers use this fixed dependency set. Keep transitive runtime
+    # packages explicit so a developer's unrelated tools cannot enter a setup.
+    $runtimePackages = @(
+        "cv2", "numpy", "numpy.libs", "onnxruntime", "pyclipper", "fitz", "pymupdf", "pikepdf",
+        "PIL", "lxml", "coloredlogs", "humanfriendly", "flatbuffers", "google",
+        "sympy", "mpmath", "packaging", "deprecated", "wrapt", "cffi", "pycparser",
+        "typing_extensions"
+    )
+    $sourceSitePackages = Join-Path $pythonEnvironment "Lib\site-packages"
+    $packagedSitePackages = Join-Path $packagedPython "Lib\site-packages"
+    New-Item -ItemType Directory -Path $packagedSitePackages -Force | Out-Null
+    foreach ($package in $runtimePackages) {
+        $sourcePackage = Join-Path $sourceSitePackages $package
+        if (Test-Path $sourcePackage) {
+            & robocopy $sourcePackage (Join-Path $packagedSitePackages $package) /E /XD __pycache__ tests test mupdf-devel /XF *.pyc *.pyo *.lib /NFL /NDL /NJH /NJS /NP
+            if ($LASTEXITCODE -gt 7) {
+                throw "Failed to copy Python package $package (exit code $LASTEXITCODE)."
+            }
+        }
+    }
+
+    Get-ChildItem $sourceSitePackages -File | Where-Object {
+        $_.Name -match '^(_miniaudio|_cffi_backend).*\.(pyd|py)$' -or $_.Name -eq 'miniaudio.py'
+    } | Copy-Item -Destination $packagedSitePackages -Force
+
+    Get-ChildItem (Join-Path $packagedPython "Scripts") -File |
+        Where-Object { $_.Name -notin @("python.exe", "pythonw.exe") } |
+        Remove-Item -Force
 
     if ($BuildInstaller) {
         $isccPath = (Get-Command ISCC.exe -ErrorAction SilentlyContinue).Path
