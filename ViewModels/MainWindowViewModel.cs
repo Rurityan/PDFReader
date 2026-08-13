@@ -3516,6 +3516,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private void AudioPlaybackStateChanged(object? sender, EventArgs e)
     {
+        // LibVLC may report a transient stopped/paused state while toggling pause.
+        // Keep the session visible until the user stops it or the reading loop ends.
+        if (IsAudioPaused)
+        {
+            return;
+        }
+
         SetAudioPlaying(_audioPlaybackService.IsPlaying);
         SetAudioPaused(_audioPlaybackService.IsPaused);
     }
