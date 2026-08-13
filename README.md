@@ -9,6 +9,7 @@ Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Av
 - 连续阅读可直接显示当前页已保存的 OCR 框，并通过喇叭按钮播放或按设置自动生成音频。
 - 框选页面区域，使用 PP-OCRv5 server ONNX 识别中文、繁体中文、英文和日文等文本；支持 CPU 与 DirectML 自动选择。
 - OCR 截取会进入顺序后台队列，可连续框选多个区域；结果需用户确认后保存，并显示识别中、待确认或待挂载状态。
+- 顶部“资源”可管理当前 PDF 的 OCR 与音频资源，支持 OCR 标题搜索和已挂载/未挂载筛选；音频始终依附于 OCR，删除 OCR 会联动删除音频和截图。
 - 书签树支持拖拽或右键选择父书签调整层级、名称包含搜索定位、跳转、删除和撤回删除。
 - PDF 标注支持选择、文本框、直线、自由绘制、方框、高亮与轨迹橡皮擦。修改先缓存在会话中，点击“保存标注”后才增量写回 PDF。
 - 文件记录支持归档、恢复与彻底移除；彻底移除会删除关联的 OCR、书签、音频和截图资源。
@@ -75,6 +76,8 @@ user_data/
 
 启动后会在后台清理无效文档关联、失效书签关联的 OCR 与无主音频记录，并删除这些记录引用的资源文件。不会扫描资源目录删除无法确认归属的文件。
 
+“资源”窗口仅管理当前打开 PDF 的 OCR 记录。可单独删除某条 OCR 的全部音频，或删除 OCR 本身及其关联音频、截图；不会创建、导入或保留没有 OCR 关联的独立音频记录。
+
 ## 设置
 
 设置窗口可调整：
@@ -133,7 +136,7 @@ dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p
 
 ARM64 打包选项会使用 `.venv-arm64` 和 `py-libs/win-arm64` 中的原生 wheel，并在发布前检查 OCR 与 Acrobat 富媒体依赖。当前 ARM64 wheel 清单包括 `numpy`、`opencv-python-headless`、`pyclipper`、`onnxruntime-directml`、`PyMuPDF`、`miniaudio`、`cffi` 和已自行编译的 `pikepdf`。pikepdf wheel 自带 qpdf 12.2.0、zlib 和 MSVC 运行库。
 
-最终安装包名称会使用当前版本号，例如 `PDFReader-1.1.5-x64-Setup.exe` 和 `PDFReader-1.1.5-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
+最终安装包名称会使用当前版本号，例如 `PDFReader-1.1.6-x64-Setup.exe` 和 `PDFReader-1.1.6-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
 
 ## 说明
 

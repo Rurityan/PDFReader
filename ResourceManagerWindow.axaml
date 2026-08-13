@@ -1,0 +1,79 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:model="using:PDFReader.Models"
+        x:Class="PDFReader.ResourceManagerWindow"
+        x:Name="RootWindow"
+        Title="资源管理"
+        Width="820"
+        Height="620"
+        MinWidth="620"
+        MinHeight="420"
+        WindowStartupLocation="CenterOwner">
+    <Grid RowDefinitions="Auto,Auto,*" Background="#F5F6F8">
+        <Border Grid.Row="0" Background="#20252B" Padding="20,14">
+            <StackPanel Spacing="4">
+                <TextBlock Text="资源管理" Foreground="White" FontSize="19" FontWeight="SemiBold" />
+                <TextBlock Text="当前 PDF 的 OCR 记录及其关联音频" Foreground="#C7CDD4" />
+            </StackPanel>
+        </Border>
+        <Border Grid.Row="1" Background="White" BorderBrush="#D9DDE2" BorderThickness="0,0,0,1" Padding="16,12">
+            <Grid ColumnDefinitions="*,180" ColumnSpacing="10">
+                <TextBox x:Name="SearchBox"
+                         PlaceholderText="搜索 OCR 标题"
+                         TextChanged="SearchTextChanged"
+                         VerticalContentAlignment="Center" />
+                <ComboBox Grid.Column="1"
+                          x:Name="FilterBox"
+                          SelectedIndex="0"
+                          SelectionChanged="FilterChanged">
+                    <ComboBoxItem Content="全部记录" />
+                    <ComboBoxItem Content="已挂载" />
+                    <ComboBoxItem Content="未挂载" />
+                </ComboBox>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="2" RowDefinitions="*,Auto" Margin="16">
+            <ListBox x:Name="RecordList" Background="Transparent">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="model:OcrRecord">
+                        <Border Background="White" BorderBrush="#D9DDE2" BorderThickness="1" Padding="12" Margin="0,0,0,8">
+                            <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto,Auto">
+                                <TextBlock Text="{Binding Title}" FontSize="15" FontWeight="SemiBold" Foreground="#303943" />
+                                <TextBlock Grid.Row="1" Text="{Binding ResourcePageText}" Foreground="#68737E" Margin="0,5,0,0" />
+                                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="14" Margin="0,7,0,0">
+                                    <TextBlock Text="{Binding ResourceMountStatusText}" Foreground="#2B6CB0" />
+                                    <TextBlock Text="{Binding ResourceAudioStatusText}" Foreground="#4A5560" />
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Grid.RowSpan="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Button Content="删除音频"
+                                            Tag="audio"
+                                            Click="DeleteAudioClick"
+                                            IsEnabled="{Binding #RootWindow.CanModifyResources}"
+                                            Padding="10,6" />
+                                    <Button Content="删除 OCR"
+                                            Tag="ocr"
+                                            Click="DeleteOcrClick"
+                                            IsEnabled="{Binding #RootWindow.CanModifyResources}"
+                                            Padding="10,6"
+                                            Background="#C53030"
+                                            Foreground="White" />
+                                </StackPanel>
+                            </Grid>
+                        </Border>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Grid.Row="0"
+                       x:Name="EmptyText"
+                       Text="当前筛选条件下没有 OCR 资源"
+                       HorizontalAlignment="Center"
+                       VerticalAlignment="Center"
+                       Foreground="#68737E"
+                       IsVisible="False" />
+            <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="10" Margin="0,12,0,0">
+                <TextBlock x:Name="ReadOnlyText" Foreground="#A15C00" VerticalAlignment="Center" IsVisible="False" />
+                <Button Content="关闭" Click="CloseClick" Padding="16,7" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

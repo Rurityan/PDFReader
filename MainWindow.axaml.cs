@@ -1261,6 +1261,32 @@ public partial class MainWindow : Window
         await window.ShowDialog(this);
     }
 
+    private async void OpenResourceManagerClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        if (!ViewModel.HasDocument)
+        {
+            return;
+        }
+
+        try
+        {
+            var records = await ViewModel.GetCurrentDocumentOcrRecordsAsync();
+            var window = new ResourceManagerWindow(
+                records,
+                ViewModel.DeleteOcrRecordAsync,
+                ViewModel.DeleteOcrAudiosAsync,
+                ViewModel.CanModifyDocument);
+            await window.ShowDialog(this);
+            ViewModel.RefreshResourceRelatedViews();
+        }
+        catch (Exception exception)
+        {
+            ViewModel.SetStatus($"打开资源管理失败: {exception.Message}");
+        }
+
+        e.Handled = true;
+    }
+
     private void OpenFileMenuClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         FileMenuButton.ContextMenu?.Open(FileMenuButton);

@@ -115,6 +115,17 @@ public sealed class OcrRecord : INotifyPropertyChanged
     public string AudioStatusText => HasAudio ? "音频：已生成" : "音频：未生成";
 
     [NotMapped]
+    public string ResourcePageText => $"第 {PageNumber} 页";
+
+    [NotMapped]
+    public string ResourceMountStatusText => BookmarkId is null ? "挂载：未挂载" : "挂载：已挂载";
+
+    [NotMapped]
+    public string ResourceAudioStatusText => TtsAudios.Count == 0
+        ? "音频：无"
+        : HasAudio ? $"音频：{TtsAudios.Count} 个可用" : "音频：文件缺失";
+
+    [NotMapped]
     public string QueueStatusText => IsProcessing
         ? "识别中..."
         : IsPersisted && BookmarkId is null

@@ -295,23 +295,50 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         SelectedOcrHistoryRecord = null;
     }
 
-    public async Task DeleteOcrRecordAsync(OcrRecord? record)
+    public async Task<IReadOnlyList<OcrRecord>> GetCurrentDocumentOcrRecordsAsync()
+    {
+        if (!HasDocument)
+        {
+            return Array.Empty<OcrRecord>();
+        }
+
+        var records = await _ocrRepository.GetForDocumentAsync(_documentId);
+        foreach (var record in records)
+        {
+            record.IsPersisted = true;
+            record.RefreshAudioStatus();
+        }
+
+        return records;
+    }
+
+    public void RefreshResourceRelatedViews()
+    {
+        RefreshBookmarkDisplayTree();
+        RefreshCurrentPageOcr();
+        RefreshReadingPageOcr();
+        OnPropertyChanged(nameof(CanGenerateSpeech));
+    }
+
+    public async Task<bool> DeleteOcrRecordAsync(OcrRecord? record)
     {
         if (record is null || !CanModifyDocument || IsBusy || IsOcrBusy || IsTtsBusy)
         {
-            return;
+            return false;
         }
 
         try
         {
             DeleteResources(await _ocrRepository.DeleteAsync(record.Id));
-            OcrHistory.Remove(record);
-            if (ReferenceEquals(SelectedOcrRecord, record))
+            var currentRecord = OcrHistory.FirstOrDefault(item => item.Id == record.Id) ?? record;
+            OcrHistory.Remove(currentRecord);
+            OcrProcessingQueue.Remove(currentRecord);
+            if (SelectedOcrRecord?.Id == record.Id)
             {
                 SelectedOcrRecord = null;
             }
 
-            if (ReferenceEquals(SelectedOcrHistoryRecord, record))
+            if (SelectedOcrHistoryRecord?.Id == record.Id)
             {
                 SelectedOcrHistoryRecord = null;
             }
@@ -320,10 +347,45 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             RefreshCurrentPageOcr();
             RefreshReadingPageOcr();
             StatusMessage = "OCR 记录及其音频资源已删除";
+            return true;
         }
         catch (Exception exception)
         {
             StatusMessage = $"删除 OCR 记录失败: {exception.Message}";
+            return false;
+        }
+    }
+
+    public async Task<bool> DeleteOcrAudiosAsync(OcrRecord? record)
+    {
+        if (record is null || !CanModifyDocument || IsBusy || IsOcrBusy || IsTtsBusy)
+        {
+            return false;
+        }
+
+        try
+        {
+            foreach (var path in await _ocrRepository.DeleteAudiosAsync(record.Id))
+            {
+                DeleteResource(path);
+            }
+
+            record.TtsAudios.Clear();
+            record.RefreshAudioStatus();
+            var currentRecord = OcrHistory.FirstOrDefault(item => item.Id == record.Id);
+            if (currentRecord is not null && !ReferenceEquals(currentRecord, record))
+            {
+                currentRecord.TtsAudios.Clear();
+                currentRecord.RefreshAudioStatus();
+            }
+            RefreshResourceRelatedViews();
+            StatusMessage = "OCR 音频资源已删除";
+            return true;
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"删除 OCR 音频失败: {exception.Message}";
+            return false;
         }
     }
 
@@ -2289,7 +2351,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private void RefreshOcrProcessingQueue()
     {
         OcrProcessingQueue.Clear();
-        foreach (var record in OcrHistory.Where(record => record.BookmarkId is null))
+        foreach (var record in OcrHistory.Where(record => record.BookmarkId is null && !record.IsExternalImport))
         {
             OcrProcessingQueue.Add(record);
         }
