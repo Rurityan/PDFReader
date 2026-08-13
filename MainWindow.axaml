@@ -498,8 +498,7 @@
                              IsVisible="{Binding IsContinuousReadingMode}"
                              ItemsSource="{Binding ReadingPages}"
                              Background="Transparent"
-                             BorderThickness="0"
-                             PointerWheelChanged="ContinuousReadingListPointerWheelChanged">
+                             BorderThickness="0">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <VirtualizingStackPanel />
@@ -541,8 +540,7 @@
                               IsVisible="{Binding !IsContinuousReadingMode}"
                               HorizontalScrollBarVisibility="Auto"
                               VerticalScrollBarVisibility="Auto"
-                              ScrollChanged="DocumentScrollViewerScrollChanged"
-                              PointerWheelChanged="DocumentScrollViewerPointerWheelChanged">
+                              ScrollChanged="DocumentScrollViewerScrollChanged">
                     <Grid HorizontalAlignment="Center" VerticalAlignment="Top" RowDefinitions="Auto,Auto,Auto">
                         <Border Grid.Row="0"
                                 Background="White"

@@ -86,6 +86,11 @@ public partial class MainWindow : Window
             WindowPointerPressed,
             Avalonia.Interactivity.RoutingStrategies.Tunnel,
             true);
+        AddHandler(
+            InputElement.PointerWheelChangedEvent,
+            WindowPointerWheelChanged,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel,
+            true);
         ViewModel.PropertyChanged += ViewModelPropertyChanged;
         _ = ViewModel.InitializeAsync();
     }
@@ -638,8 +643,14 @@ public partial class MainWindow : Window
         }
     }
 
-    private void ContinuousReadingListPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    private void WindowPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (!IsWithin(e.Source as Visual, PageSurface)
+            && !IsWithin(e.Source as Visual, ContinuousReadingList))
+        {
+            return;
+        }
+
         TryHandleZoomWheel(e);
     }
 

@@ -278,11 +278,20 @@ py -m venv .venv
 
 也可以不在发布目录创建 `.venv`，通过 `PDFREADER_PYTHON` 环境变量指向已有 Python 解释器。应用应从发布目录启动，以便数据库、配置和资源都位于 exe 旁边的 `user_data` 中。
 
-也可以使用 `Scripts/build-release.ps1` 将当前 Python 虚拟环境复制进发布目录；安装 Inno Setup 后，加上 `-BuildInstaller` 参数即可生成安装包：
+推荐使用 `Scripts/build-release.ps1` 构建完整运行时。脚本不会把开发环境的整个 `.venv` 原样带入发布目录，而是按白名单复制 OCR、PyMuPDF、标注和 Acrobat 富媒体导出所需的 Python 运行库；这样可以避免旧 Paddle/ModelScope 工具、测试文件和其他开发依赖进入安装包。安装 Inno Setup 后，加上 `-BuildInstaller` 参数即可生成安装包：
 
 ```powershell
 .\Scripts\build-release.ps1 -BuildInstaller
 ```
+
+发布清理规则包括：
+
+- `libvlc` 只保留当前目标架构（x64 或 ARM64），删除 x86 和其他架构插件。
+- `MuPDFCore` 只保留 Windows 当前目标架构的原生资源，删除 Linux、macOS 和其他 Windows 架构资源。
+- 删除 `.pdb`、`.lib`、`.pyc`、`__pycache__`、`pip`、`setuptools`、测试目录和 `mupdf-devel` 等开发文件。
+- Python 发布环境只保留 `cv2`、`numpy`、`onnxruntime`、`pyclipper`、`fitz`/`pymupdf`、`pikepdf`、`miniaudio` 及其运行时依赖。
+
+清理后的发布目录约为 737 MiB、约 3,100 个文件；此前完整复制开发环境约为 1.28 GiB、约 25,000 个文件。构建后可检查 `publish\\win-x64` 或 `publish\\win-arm64`，确认 `libvlc` 下只有目标架构目录。
 
 ARM64 Windows 发布使用独立输出目录和原生 ARM64 Python 虚拟环境 `.venv-arm64`：
 

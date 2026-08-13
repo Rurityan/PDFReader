@@ -29,6 +29,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly LocalAutomationService _automationService;
     private readonly SemaphoreSlim _documentOpenGate = new(1, 1);
     private readonly SemaphoreSlim _pageRenderGate = new(1, 1);
+    private readonly SemaphoreSlim _zoomChangeGate = new(1, 1);
     private readonly SemaphoreSlim _readingRenderGate = new(2, 2);
     private readonly Dictionary<Guid, Dictionary<int, IReadOnlyList<PdfAnnotationInfo>>> _annotationCache = new();
     private readonly Dictionary<int, Bitmap> _prefetchedPageImages = new();
@@ -1529,7 +1530,20 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     public async Task ChangeZoomAsync(double delta)
     {
-        await SetZoomAsync(_zoom + delta);
+        if (!HasDocument)
+        {
+            return;
+        }
+
+        await _zoomChangeGate.WaitAsync();
+        try
+        {
+            await SetZoomCoreAsync(_zoom + delta);
+        }
+        finally
+        {
+            _zoomChangeGate.Release();
+        }
     }
 
     public async Task ApplyZoomInputAsync()
@@ -1552,11 +1566,29 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
     private async Task SetZoomAsync(double zoom)
     {
-        if (!HasDocument || IsBusy)
+        if (!HasDocument)
         {
             return;
         }
 
+        await _zoomChangeGate.WaitAsync();
+        try
+        {
+            if (!HasDocument)
+            {
+                return;
+            }
+
+            await SetZoomCoreAsync(zoom);
+        }
+        finally
+        {
+            _zoomChangeGate.Release();
+        }
+    }
+
+    private async Task SetZoomCoreAsync(double zoom)
+    {
         var normalizedZoom = Math.Clamp(Math.Round(zoom, 2), 0.5, 3.0);
         if (Math.Abs(_zoom - normalizedZoom) < 0.001)
         {
