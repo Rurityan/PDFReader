@@ -20,7 +20,7 @@ PDFReader 是一款基于 Avalonia 的桌面 PDF 阅读与标注软件，当前�
 - Avalonia 12.1.1、Fluent Theme、Inter Fonts
 - CommunityToolkit.Mvvm 8.4.2
 - MuPDFCore 1.10.2：PDF 页面渲染
-- PyMuPDF 1.26.7：PDF 标注对象的读取、创建、删除、增量保存，以及全量导出元数据附件
+- PyMuPDF 1.26.7：由 Python worker 负责 OCR、PDF 标注对象的读取/创建/更新/删除/增量保存、HTML5 页面导出及全量导出元数据附件
 - Entity Framework Core SQLite 10.0.10：应用数据库
 - SQLitePCLRaw.lib.e_sqlite3 2.1.12：SQLite 原生运行库
 - LibVLCSharp 3.10.1、VideoLAN.LibVLC.Windows 3.0.23.1：音频播放
@@ -38,7 +38,8 @@ PDFReader/
 ├─ Models/                     数据模型、设置模型、标注模型
 ├─ Services/
 │  ├─ PdfDocumentService.cs    MuPDF 页面渲染
-│  ├─ PdfEditingService.cs     PDF 标注读写
+│  ├─ PdfAnnotationService.cs  启动 Python 标注 worker
+│  ├─ PdfEditingService.cs     其它 PDF 文件操作（遗留辅助代码）
 │  ├─ OcrService.cs            启动 Python OCR worker
 │  ├─ TtsService.cs            调用 TTS API 并保存音频
 │  ├─ ReaderDbContextFactory.cs 数据库初始化和上下文创建
@@ -123,6 +124,17 @@ API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱�
 导入文件时，若当前 PDF 记录没有本地书签，应用先尝试读取 `PDFReader-metadata.json` 并恢复书签树、OCR 与音频文件；未检测到该附件时，回退到读取普通 PDF Outline。恢复副本会分配新的本地 UUID，避免与原 PDF 记录的数据库主键冲突。
 
 应用启动后会在后台运行一次一致性清理：删除无效文档或书签关联的 OCR、无主音频记录及其已知资源；失效的书签父级关系会被提升为根书签。REST 导入的未挂载 OCR 会标记为外部导入并保留，直到挂载到书签；手动产生的未挂载 OCR 仍会按退出清理规则处理。该任务不扫描资源目录删除未被数据库引用的任意文件。
+
+## 4.2 HTML5 阅读包
+
+“文件 > 导出 HTML5 阅读包”输出一个离线目录包，而不是单个巨型 HTML 文件：
+
+- `index.html`、`app.js`、`app.css`、`manifest.js` 和 `manifest.json` 构成无框架依赖的按页阅读器；`manifest.js` 将清单作为脚本变量载入，绕过浏览器从 `file://` 页面调用 `fetch` 的限制，`manifest.json` 保留供调试和二次处理使用。
+- PDF 页面由 `html_export_worker.py` 使用 PyMuPDF 以 1.5 倍倍率导出为 WebP；导出端每 16 页启动一个短生命周期 worker，批次完成后释放 PyMuPDF/Pillow 原生内存，减少逐页启动进程的开销，同时避免大 PDF 在一个 Python 进程中持续累积。WebP 使用较快的编码档位，质量为 82。阅读器只在用户跳转到某页时设置该页图片 URL，不预先加载全书。
+- OCR 记录保留页码、区域坐标、标题、正文、挂载书签和可用音频相对路径。页面图片与 OCR 坐标按导出倍率同步缩放。
+- OCR 默认隐藏，显示/隐藏按钮通过 DOM `hidden` 属性立即切换当前页覆盖层；显示时标题位于 OCR 框外，以半透明短线连接到区域。有有效音频的 OCR 框显示播放按钮，并可参加“朗读本页”；没有音频的 OCR 仍显示框和正文，不阻止导出，也不显示不可用的播放按钮。
+- 导出包支持 25%-300% 的百分比缩放，页面容器按缩放后的实际尺寸提供横向和纵向滚动；阅读容器使用显式网格居中，页面左右居中，上下均预留 25vh 空间。翻页落点根据页面容器的实际顶部和底部位置计算，使上下落点使用同一个视口留白，不再按总滚动长度比例估算。阅读区在顶部继续向上滚轮或底部继续向下滚轮累计达到阈值后翻页，页面内部滚动不会误触发翻页。OCR 坐标与页面图片按同一比例重新计算。使用浏览器原生 `<audio>`，支持单条播放、本页顺序播放、从当前页起跨页连续朗读、暂停/继续/停止和页码跳转。
+- 顶部提供 OCR 搜索框，默认搜索标题，可切换到正文；搜索时会将换行、制表符和连续空格折叠为一个空格，原始 OCR 正文不变。输入时实时统计匹配数，提供上一个/下一个结果按钮，按 Enter 循环定位下一个结果，Esc 清除搜索。命中记录自动跳转到对应页并以金黄色框和标签高亮。
 
 顶部“资源”窗口以当前 PDF 的 OCR 记录为管理单位，支持按 OCR 标题搜索，并按已挂载/未挂载状态筛选。每个条目展示页码、挂载状态和音频可用状态；可以删除其全部音频，或删除 OCR 及关联的音频、截图。不会提供独立音频对象的创建、导入或保留入口，`TtsAudioRecords.OcrRecordId` 外键和启动清理共同保证音频必须关联 OCR。
 
@@ -347,7 +359,7 @@ Adobe Acrobat 富媒体导出通过 `Scripts/rich_media_worker.py`、`pikepdf` �
 - Voice Model 列表和当前选择保存在 `settings.json`；如果当前选择没有对应的 `voice_id`，TTS 请求会被拒绝并提示重新配置。
 - 截图路径主要用于调试和记录，不作为 OCR 数据的可靠存档。
 - 标注缓存只存在于当前应用会话；应用异常退出时无法保证未保存标注可恢复。
-- PDF 渲染使用 MuPDFCore，标注文件读写使用 PDFsharp，两者对极端 PDF 页面变换或非标准 annotation 的显示可能存在差异。
+- PDF 页面渲染使用 MuPDFCore；OCR 和 PDF 标注读写分别通过 `ocr_worker.py` 与 `annotation_worker.py` 调用 PyMuPDF。MuPDFCore 与 PyMuPDF 对极端 PDF 页面变换或非标准 annotation 的显示可能存在差异。
 - 数据库目前按全新开发阶段初始化，没有针对旧数据库的兼容迁移。
 - 页面缩略图属于非核心缓存，卸载时无条件删除 `user_data/cache`；即使选择保留其他 `user_data`，也不会保留缩略图缓存。
 

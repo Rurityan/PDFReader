@@ -85,6 +85,9 @@
                             <MenuItem Header="导出 Adobe Acrobat 富媒体 PDF"
                                       IsEnabled="{Binding HasDocument}"
                                       Click="ExportAcrobatRichMediaPdfClick" />
+                            <MenuItem Header="导出 HTML5 阅读包"
+                                      IsEnabled="{Binding HasDocument}"
+                                      Click="ExportHtml5Click" />
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>

@@ -1346,6 +1346,22 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private async void ExportHtml5Click(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+        {
+            Title = "选择空文件夹作为 HTML5 阅读包导出目录",
+            AllowMultiple = false,
+        });
+        var path = folders.FirstOrDefault()?.Path.LocalPath;
+        if (!string.IsNullOrWhiteSpace(path))
+        {
+            await ViewModel.ExportHtml5Async(path);
+        }
+
+        e.Handled = true;
+    }
+
     private async void CreateBookmarkClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (!ViewModel.HasDocument)

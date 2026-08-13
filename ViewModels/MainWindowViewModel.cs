@@ -26,6 +26,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private readonly AudioPlaybackService _audioPlaybackService = new();
     private readonly PdfEditingService _pdfEditingService = new();
     private readonly PdfAnnotationService _annotationService = new();
+    private readonly Html5ExportService _html5ExportService = new();
     private readonly PdfDocumentRepository _documentRepository = new();
     private readonly LocalAutomationService _automationService;
     private readonly SemaphoreSlim _documentOpenGate = new(1, 1);
@@ -3506,6 +3507,37 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         SetAudioPlaying(false);
         SetAudioPaused(false);
         StatusMessage = "音频已停止";
+    }
+
+    public async Task ExportHtml5Async(string outputDirectory)
+    {
+        if (!HasDocument || IsBusy || HasPendingAnnotationChanges || string.IsNullOrWhiteSpace(outputDirectory))
+        {
+            StatusMessage = HasPendingAnnotationChanges ? "请先保存或放弃缓存中的标注变更" : StatusMessage;
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在导出 HTML5 阅读包...";
+            await _html5ExportService.ExportAsync(
+                DocumentPath,
+                outputDirectory,
+                DocumentTitle,
+                _pdfService.PageCount,
+                Bookmarks.ToList(),
+                OcrHistory.ToList());
+            StatusMessage = "已导出 HTML5 阅读包";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"HTML5 导出失败: {exception.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
     }
 
     [RelayCommand]

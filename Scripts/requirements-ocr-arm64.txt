@@ -5,6 +5,7 @@ opencv-python-headless==4.14.0.94
 pyclipper==1.4.0
 onnxruntime-directml==1.30.0
 PyMuPDF==1.28.2
+Pillow==12.3.0
 
 # ONNX Runtime Python dependencies.
 coloredlogs==15.0.1

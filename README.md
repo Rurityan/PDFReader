@@ -1,6 +1,6 @@
 # PDFReader
 
-Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Avalonia/.NET 构建，页面渲染由 MuPDFCore 完成；OCR 与 PDF 标注读写通过本地 Python worker 执行。
+Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Avalonia/.NET 构建，页面渲染由 MuPDFCore 完成；OCR 和 PDF 标注读写均通过本地 Python worker 执行，底层使用 PyMuPDF。
 
 ## 功能
 
@@ -14,6 +14,7 @@ Windows 桌面 PDF 阅读、OCR、书签、TTS 和标注工具。项目使用 Av
 - PDF 标注支持选择、文本框、直线、自由绘制、方框、高亮与轨迹橡皮擦。修改先缓存在会话中，点击“保存标注”后才增量写回 PDF。
 - 文件记录支持归档、恢复与彻底移除；彻底移除会删除关联的 OCR、书签、音频和截图资源。
 - “全量导出 PDF”将标准书签写入 PDF Outline，将音频作为 PDF Embedded File 附件，并保存 OCR 元数据清单。重新导入新版导出文件可恢复书签、OCR 与音频关联。
+- “文件 > 导出 HTML5 阅读包”生成可离线打开的目录包，按页跳转并懒加载 WebP 页面图，叠加 OCR 框和标题；存在音频的 OCR 可播放并参与本页朗读，没有音频的 OCR 仍会正常导出和显示。
 
 ## 运行要求
 
@@ -136,10 +137,12 @@ dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p
 
 ARM64 打包选项会使用 `.venv-arm64` 和 `py-libs/win-arm64` 中的原生 wheel，并在发布前检查 OCR 与 Acrobat 富媒体依赖。当前 ARM64 wheel 清单包括 `numpy`、`opencv-python-headless`、`pyclipper`、`onnxruntime-directml`、`PyMuPDF`、`miniaudio`、`cffi` 和已自行编译的 `pikepdf`。pikepdf wheel 自带 qpdf 12.2.0、zlib 和 MSVC 运行库。
 
-最终安装包名称会使用当前版本号，例如 `PDFReader-1.1.6-x64-Setup.exe` 和 `PDFReader-1.1.6-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
+最终安装包名称会使用当前版本号，例如 `PDFReader-1.1.7-x64-Setup.exe` 和 `PDFReader-1.1.7-arm64-Setup.exe`。安装包卸载时会询问是否保留 `user_data`；页面缩略图缓存会被单独删除。
+
+HTML5 阅读包为目录结构，包含 `index.html`、`app.js`、`app.css`、`manifest.json`、`manifest.js`、按页懒加载的 `pages/*.webp` 和关联 `audio/`。网页支持 25%-300% 百分比缩放、页面横向/纵向滚动、在阅读区顶部或底部继续滚轮触发上一页/下一页、OCR 标题/正文搜索定位、显示/隐藏当前页 OCR、本页朗读和从当前页起的连续朗读。页面上下均预留 `25vh`，翻页时按相同的视口留白定位，页面内容保持水平居中。OCR 标题显示在区域外，并通过半透明连接线指向选区。`manifest.js` 是为直接双击 `index.html` 准备的内嵌清单；因此不依赖本地服务器也可以打开，`manifest.json` 仍保留供调试和二次处理使用。
 
 ## 说明
 
 - TTS API 按 OpenAI Compatible `/audio/speech` 端点请求，并使用 MP3 输出。
-- PDF 注释以 PyMuPDF 增量写入。复杂或非标准第三方标注可以被选择和删除，但未必能被完全还原为可编辑的同类型对象。
+- PDF 标注由 `annotation_worker.py` 使用 PyMuPDF 读取、创建、更新、删除并增量写回。复杂或非标准第三方标注可以被选择和删除，但未必能被完全还原为可编辑的同类型对象。
 - 详细设计、数据库字段、环境变量和验证清单见 [DEVELOPMENT.md](DEVELOPMENT.md)。
