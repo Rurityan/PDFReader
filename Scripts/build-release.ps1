@@ -33,6 +33,12 @@ function Publish-Runtime {
     if (-not (Test-Path (Join-Path $pythonEnvironment "Scripts\python.exe"))) {
         throw "Python environment is missing Scripts\python.exe: $pythonEnvironment"
     }
+    if ($TargetRuntime -eq "win-x64") {
+        & (Join-Path $pythonEnvironment "Scripts\python.exe") -c "import pikepdf, miniaudio"
+        if ($LASTEXITCODE -ne 0) {
+            throw "The x64 Python environment is missing Acrobat export dependencies. Run: .venv\Scripts\python.exe -m pip install -r Scripts\requirements-ocr.txt"
+        }
+    }
 
     if (Test-Path $publishDirectory) {
         Remove-Item -LiteralPath $publishDirectory -Recurse -Force

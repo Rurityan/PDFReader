@@ -92,6 +92,35 @@ public sealed class PdfAnnotationService
         }
     }
 
+    public async Task ExportAcrobatRichMediaAsync(string sourcePath, string outputPath, IReadOnlyList<Bookmark> bookmarks, IReadOnlyList<OcrRecord> ocrRecords)
+    {
+        var manifestPath = Path.Combine(Path.GetTempPath(), $"pdfreader-rich-media-{Guid.NewGuid():N}.json");
+        try
+        {
+            var outline = new List<Dictionary<string, object?>>();
+            AddOutlineEntries(bookmarks.Where(bookmark => bookmark.ParentId is null), 1, outline);
+            var manifest = new
+            {
+                format = "PDFReader Acrobat rich media v1",
+                bookmarks = outline,
+                ocrRecords = ocrRecords.Select(record => new
+                {
+                    record.PageNumber, record.X, record.Y, record.Width, record.Height,
+                    audioFiles = record.TtsAudios.Where(audio => File.Exists(audio.FilePath)).Select(audio => new
+                    {
+                        audio.FilePath, audio.CreatedAtUtc,
+                    }),
+                }),
+            };
+            await File.WriteAllTextAsync(manifestPath, JsonSerializer.Serialize(manifest, JsonOptions));
+            await RunAsync("export-acrobat", sourcePath, outputPath, manifestPath);
+        }
+        finally
+        {
+            TryDelete(manifestPath);
+        }
+    }
+
     public async Task<PdfReaderMetadata?> RestoreMetadataAsync(string path, string audioDirectory)
     {
         var resultPath = Path.Combine(Path.GetTempPath(), $"pdfreader-restore-{Guid.NewGuid():N}.json");
@@ -125,7 +154,9 @@ public sealed class PdfAnnotationService
     {
         var baseDirectory = AppContext.BaseDirectory;
         var python = ResolvePythonPath(baseDirectory);
-        var worker = Path.Combine(baseDirectory, "Scripts", "annotation_worker.py");
+        var worker = arguments.FirstOrDefault() == "export-acrobat"
+            ? Path.Combine(baseDirectory, "Scripts", "rich_media_worker.py")
+            : Path.Combine(baseDirectory, "Scripts", "annotation_worker.py");
         if (!File.Exists(python) || !File.Exists(worker))
         {
             throw new FileNotFoundException("找不到 PyMuPDF 标注运行环境。");

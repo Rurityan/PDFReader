@@ -1,0 +1,2 @@
+pikepdf==9.10.2
+miniaudio==1.71

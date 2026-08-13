@@ -90,6 +90,8 @@ user_data/
 
 本地自动化接口默认关闭；在设置页启用并配置端口后，外部程序通过本地 Token 和 `X-PDFReader-Token` 请求头批量导入 OCR 和已有音频。接口只监听本机，外部程序不应直接写入 `reader.db`。完整字段约定、错误响应和自动化示例见 [REST_API.md](REST_API.md)。
 
+“文件”菜单中的“导出 Adobe Acrobat 富媒体 PDF”会将已有 VOC 音频嵌入 PDF，并在对应 OCR 区域写入标准声音注释，供 Acrobat 识别和播放。x64 安装包已包含 `pikepdf` 和 `miniaudio`；这些库仅在执行导出时加载。当前官方 `pikepdf` 没有 Windows ARM64 wheel，因此 ARM64 安装包不包含此功能所需依赖。
+
 ```json
 {
   "pdfPath": "D:\\docs\\book.pdf",

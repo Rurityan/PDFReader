@@ -373,6 +373,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             || IsAudioPlaying
             || (!IsBusy && !IsTtsBusy && !IsAnnotationMode
                 && CurrentPageOcrRecords.Any(record => record.HasAudio)));
+    public bool CanReadPageOnly => HasDocument
+        && !IsReadingCurrentPage
+        && !IsAudioPlaying
+        && !IsBusy
+        && !IsTtsBusy
+        && !IsAnnotationMode
+        && CurrentPageOcrRecords.Any(record => record.HasAudio);
     public bool CanUndoBookmarkDelete => _deletedBookmarkHistory.Count > 0 && !IsBusy;
     public bool CanUndoAnnotationDelete => _deletedAnnotationHistory.Count > 0 && !IsBusy;
     public bool HasSelectedPdfAnnotation => SelectedPdfAnnotation is not null;
@@ -389,8 +396,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public double CurrentZoom => _zoom;
     public int DocumentPageCount => Math.Max(1, _pdfService.PageCount);
     public string CurrentPageOcrButtonText => IsCurrentPageOcrVisible
-        ? "隐藏当前页 OCR"
-        : "显示当前页 OCR";
+        ? "隐藏 OCR"
+        : "显示 OCR";
     public string AnnotationButtonText => IsAnnotationMode ? "取消标注" : "标注";
     public string AnnotationColorHex => $"#{AnnotationColor.R:X2}{AnnotationColor.G:X2}{AnnotationColor.B:X2}";
     public SolidColorBrush AnnotationColorBrush => new(AnnotationColor);
@@ -408,6 +415,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public string ReadCurrentPageButtonText => IsReadingCurrentPage || IsAudioPlaying
         ? "停止播放"
         : "朗读";
+    public string ReadPageOnlyButtonText => "朗读本页";
     public bool IsBookmarkPaneVisible => !IsPagePreviewPaneVisible;
 
     [ObservableProperty]
@@ -532,28 +540,24 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             return;
         }
 
-        await ReadCurrentPageAsync();
+        await ReadDocumentAsync();
     }
 
-    public async Task ReadCurrentPageAsync()
+    [RelayCommand(AllowConcurrentExecutions = true)]
+    private async Task ReadPageOnlyAsync()
     {
         if (!HasDocument || IsBusy || IsAnnotationMode)
         {
             return;
         }
 
-        var records = CurrentPageOcrRecords
-            .Select(record =>
-            {
-                record.RefreshAudioStatus();
-                return record;
-            })
-            .Where(record => record.HasAudio && !string.IsNullOrWhiteSpace(record.LatestAudioPath))
-            .ToList();
-        if (records.Count == 0)
+        await ReadPageAudioAsync(_currentPage, "朗读本页");
+    }
+
+    private async Task ReadDocumentAsync()
+    {
+        if (!HasDocument || IsBusy || IsAnnotationMode)
         {
-            StatusMessage = "当前页没有可播放的 OCR 音频";
-            OnPropertyChanged(nameof(CanReadCurrentPage));
             return;
         }
 
@@ -561,20 +565,16 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         _readingCancellation = cancellation;
         IsReadingCurrentPage = true;
         SetAudioPlaying(true);
-        StatusMessage = $"正在朗读当前页的 {records.Count} 条 OCR";
+        StatusMessage = "正在连续朗读 OCR 音频";
         try
         {
-            foreach (var record in records)
+            for (var pageIndex = _currentPage; pageIndex < _pdfService.PageCount; pageIndex++)
             {
                 cancellation.Token.ThrowIfCancellationRequested();
-                GeneratedAudioPath = record.LatestAudioPath!;
-                SetAudioPlaying(true);
-                await _audioPlaybackService.PlayAndWaitAsync(
-                    record.LatestAudioPath!,
-                    cancellation.Token);
+                await ReadPageAudioAsync(pageIndex, "连续朗读", cancellation.Token, false);
             }
 
-            StatusMessage = "当前页朗读完成";
+            StatusMessage = "连续朗读完成";
         }
         catch (OperationCanceledException)
         {
@@ -594,7 +594,97 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             cancellation.Dispose();
             IsReadingCurrentPage = false;
             SetAudioPlaying(false);
+            OnPropertyChanged(nameof(CanReadPageOnly));
         }
+    }
+
+    public Task ReadCurrentPageAsync() => ReadPageAudioAsync(_currentPage, "朗读本页");
+
+    private async Task ReadPageAudioAsync(
+        int pageIndex,
+        string statusPrefix,
+        CancellationToken? externalCancellation = null,
+        bool manageReadingState = true)
+    {
+        if (pageIndex < 0 || pageIndex >= _pdfService.PageCount)
+        {
+            return;
+        }
+
+        var records = GetAudioRecordsForPage(pageIndex);
+        if (records.Count == 0)
+        {
+            if (manageReadingState)
+            {
+                StatusMessage = "当前页没有可播放的 OCR 音频";
+                OnPropertyChanged(nameof(CanReadCurrentPage));
+                OnPropertyChanged(nameof(CanReadPageOnly));
+            }
+
+            return;
+        }
+
+        var cancellation = externalCancellation is null
+            ? new CancellationTokenSource()
+            : null;
+        var token = externalCancellation ?? cancellation!.Token;
+        if (manageReadingState)
+        {
+            _readingCancellation = cancellation;
+            IsReadingCurrentPage = true;
+            SetAudioPlaying(true);
+        }
+
+        try
+        {
+            if (_currentPage != pageIndex)
+            {
+                if (IsContinuousReadingMode)
+                {
+                    NavigateContinuousReadingPage(pageIndex + 1);
+                }
+                else
+                {
+                    await ShowPageAsync(pageIndex);
+                }
+            }
+
+            StatusMessage = $"{statusPrefix}第 {pageIndex + 1} 页的 {records.Count} 条 OCR";
+            foreach (var record in records)
+            {
+                token.ThrowIfCancellationRequested();
+                GeneratedAudioPath = record.LatestAudioPath!;
+                SetAudioPlaying(true);
+                await _audioPlaybackService.PlayAndWaitAsync(record.LatestAudioPath!, token);
+            }
+        }
+        finally
+        {
+            if (manageReadingState)
+            {
+                if (ReferenceEquals(_readingCancellation, cancellation))
+                {
+                    _readingCancellation = null;
+                }
+
+                cancellation!.Dispose();
+                IsReadingCurrentPage = false;
+                SetAudioPlaying(false);
+            }
+        }
+    }
+
+    private List<OcrRecord> GetAudioRecordsForPage(int pageIndex)
+    {
+        return OcrHistory
+            .Where(record => record.PageNumber == pageIndex + 1)
+            .Select(record =>
+            {
+                record.RefreshAudioStatus();
+                return record;
+            })
+            .Where(record => record.HasAudio && !string.IsNullOrWhiteSpace(record.LatestAudioPath))
+            .ToList();
     }
 
     public Task AddAnnotationAsync(
@@ -1253,6 +1343,31 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         }
     }
 
+    public async Task ExportAcrobatRichMediaPdfAsync(string outputPath)
+    {
+        if (!HasDocument || IsBusy || HasPendingAnnotationChanges || string.IsNullOrWhiteSpace(outputPath))
+        {
+            StatusMessage = HasPendingAnnotationChanges ? "请先保存或放弃缓存中的标注变更" : StatusMessage;
+            return;
+        }
+
+        try
+        {
+            IsBusy = true;
+            StatusMessage = "正在导出 Adobe Acrobat 富媒体 PDF...";
+            await _annotationService.ExportAcrobatRichMediaAsync(DocumentPath, outputPath, Bookmarks.ToList(), OcrHistory.ToList());
+            StatusMessage = "已导出 Adobe Acrobat 富媒体 PDF";
+        }
+        catch (Exception exception)
+        {
+            StatusMessage = $"Adobe Acrobat 富媒体导出失败: {exception.Message}";
+        }
+        finally
+        {
+            IsBusy = false;
+        }
+    }
+
     private void CloseRenderedDocument()
     {
         _readingCancellation?.Cancel();
@@ -1636,6 +1751,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 DocumentPath = "从文件菜单打开一个 PDF 文档";
                 PageIndicator = "0 / 0";
                 PageNumberInput = "1";
+                OnPropertyChanged(nameof(DocumentPageCount));
                 ClearPagePreviews();
                 OcrHistory.Clear();
                 Bookmarks.Clear();
@@ -3242,6 +3358,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             _lastPageNavigationUtc = now;
             PageIndicator = $"{_currentPage + 1} / {_pdfService.PageCount}";
             PageNumberInput = (_currentPage + 1).ToString();
+            OnPropertyChanged(nameof(DocumentPageCount));
             SelectedPagePreview = PagePreviews.FirstOrDefault(preview => preview.PageNumber == _currentPage + 1);
             ZoomIndicator = $"{_zoom:P0}";
             RefreshCurrentPageOcr();
@@ -3751,6 +3868,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanClearOcr));
         OnPropertyChanged(nameof(CanAnnotate));
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanReadPageOnly));
         OnPropertyChanged(nameof(CurrentPageOcrButtonText));
         OnPropertyChanged(nameof(IsContinuousReadingMode));
         if (!value)
@@ -3777,6 +3895,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanClearOcr));
         OnPropertyChanged(nameof(CanAnnotate));
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanReadPageOnly));
         OnPropertyChanged(nameof(CanSaveAnnotations));
     }
 
@@ -3794,6 +3913,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanClearOcr));
         OnPropertyChanged(nameof(CanAnnotate));
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanReadPageOnly));
     }
 
     partial void OnIsAnnotationModeChanged(bool value)
@@ -3801,6 +3921,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(AnnotationButtonText));
         OnPropertyChanged(nameof(CanAnnotate));
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanReadPageOnly));
         OnPropertyChanged(nameof(HasPreviousReadingPage));
         OnPropertyChanged(nameof(HasNextReadingPage));
         OnPropertyChanged(nameof(IsContinuousReadingMode));

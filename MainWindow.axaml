@@ -82,6 +82,9 @@
                             <MenuItem Header="全量导出 PDF"
                                       IsEnabled="{Binding HasDocument}"
                                       Click="ExportPortablePdfClick" />
+                            <MenuItem Header="导出 Adobe Acrobat 富媒体 PDF"
+                                      IsEnabled="{Binding HasDocument}"
+                                      Click="ExportAcrobatRichMediaPdfClick" />
                         </ContextMenu>
                     </Button.ContextMenu>
                 </Button>
@@ -98,7 +101,7 @@
                           VerticalScrollBarVisibility="Disabled"
                           HorizontalAlignment="Stretch">
                 <Grid MinWidth="1420"
-                      ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"
+                      ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"
                       VerticalAlignment="Center"
                       Margin="0,0,0,14">
                 <Button Grid.Column="0"
@@ -117,13 +120,14 @@
                 <Button Grid.Column="3" Command="{Binding GoPreviousCommand}" Padding="10,7" Content="上一页" />
                 <Button Grid.Column="4" Command="{Binding GoNextCommand}" Padding="10,7" Margin="6,0,0,0" Content="下一页" />
                 <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center" Margin="14,0">
-                    <TextBlock Text="{Binding PageIndicator}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" />
                     <TextBox Text="{Binding PageNumberInput, Mode=TwoWay}"
-                             Width="62"
+                             Width="54"
                              Height="30"
                              TextAlignment="Center"
                              IsEnabled="{Binding HasDocument}"
                              ToolTip.Tip="输入页码" />
+                    <TextBlock Text="/" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding DocumentPageCount}" FontSize="13" Foreground="#4A5560" VerticalAlignment="Center" />
                     <Button Content="跳转"
                             Command="{Binding JumpToPageCommand}"
                             IsEnabled="{Binding HasDocument}"
@@ -239,6 +243,12 @@
                         Content="{Binding ReadCurrentPageButtonText}"
                         Command="{Binding ToggleReadCurrentPageCommand}"
                         IsEnabled="{Binding CanReadCurrentPage}" />
+                <Button Grid.Column="14"
+                        Margin="6,0,0,0"
+                        Padding="12,7"
+                        Content="{Binding ReadPageOnlyButtonText}"
+                        Command="{Binding ReadPageOnlyCommand}"
+                        IsEnabled="{Binding CanReadPageOnly}" />
                 </Grid>
             </ScrollViewer>
         </Border>
@@ -386,7 +396,7 @@
                                                   ItemsSource="{Binding DisplayChildren}">
                                     <Grid Classes="bookmark-row" ColumnDefinitions="Auto,*" Margin="0,3" Background="Transparent">
                                         <Grid.ContextMenu>
-                                            <ContextMenu DataContext="{Binding}">
+                                            <ContextMenu DataContext="{Binding}" Opened="BookmarkContextMenuOpened">
                                                 <MenuItem Header="跳转到所在页面" Tag="{Binding}" Click="JumpToBookmarkClick" />
                                                 <MenuItem Header="重新读取 OCR 记录" Tag="{Binding}" Click="ReattachBookmarkOcrClick" />
                                                 <MenuItem Header="修改书签名称" Tag="{Binding}" Click="RenameBookmarkClick" />
@@ -433,7 +443,7 @@
                                                    FontSize="11"
                                                    VerticalAlignment="Center" />
                                         <Grid.ContextMenu>
-                                            <ContextMenu DataContext="{Binding}">
+                                            <ContextMenu DataContext="{Binding}" Opened="BookmarkContextMenuOpened">
                                                 <MenuItem Header="查看正文" Tag="{Binding}" Click="ViewOcrTextClick" />
                                                 <MenuItem Header="播放音频" Tag="{Binding}" IsEnabled="{Binding HasAudio}" Click="PlayOcrAudioClick" />
                                                 <MenuItem Header="生成音频" Tag="{Binding}" IsEnabled="{Binding !HasAudio}" Click="GenerateOcrAudioClick" />

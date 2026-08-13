@@ -74,6 +74,7 @@ public sealed class OcrResultRepository
         }
 
         record.BookmarkId = bookmarkId;
+        record.IsExternalImport = false;
         await database.SaveChangesAsync(cancellationToken);
     }
 
@@ -134,7 +135,7 @@ public sealed class OcrResultRepository
         using var database = _contextFactory.Create();
         var orphanedRecords = database.OcrRecords
             .Include(record => record.TtsAudios)
-            .Where(record => record.BookmarkId == null)
+            .Where(record => record.BookmarkId == null && !record.IsExternalImport)
             .ToList();
         if (orphanedRecords.Count == 0)
         {
@@ -165,9 +166,10 @@ public sealed class OcrResultRepository
         // A record is only valid when it remains attached to a bookmark in the same PDF document.
         var orphanedRecords = records.Where(record =>
                 !documents.Contains(record.PdfDocumentId)
-                || record.BookmarkId is not Guid bookmarkId
-                || !bookmarkById.TryGetValue(bookmarkId, out var bookmark)
-                || bookmark.PdfDocumentId != record.PdfDocumentId)
+                || (record.BookmarkId is not null
+                    && (!bookmarkById.TryGetValue(record.BookmarkId.Value, out var bookmark)
+                        || bookmark.PdfDocumentId != record.PdfDocumentId))
+                || (record.BookmarkId is null && !record.IsExternalImport))
             .ToList();
         var orphanedRecordIds = orphanedRecords.Select(record => record.Id).ToHashSet();
         var orphanedAudios = database.TtsAudioRecords

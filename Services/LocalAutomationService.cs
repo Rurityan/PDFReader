@@ -179,6 +179,7 @@ public sealed class LocalAutomationService : IDisposable
                 CaptureZoom = item.CaptureZoom > 0 ? item.CaptureZoom : 1,
                 Title = string.IsNullOrWhiteSpace(item.Title) ? item.Text.Trim()[..Math.Min(32, item.Text.Trim().Length)] : item.Title.Trim(),
                 Text = text, CreatedAtUtc = DateTime.UtcNow,
+                IsExternalImport = target is null,
             };
             await _ocr.AddAsync(record);
             await ImportAudioIfMissingAsync(record, item.AudioFile, settings);

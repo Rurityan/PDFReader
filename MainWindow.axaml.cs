@@ -1257,6 +1257,19 @@ public partial class MainWindow : Window
         e.Handled = true;
     }
 
+    private async void ExportAcrobatRichMediaPdfClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
+        {
+            Title = "导出 Adobe Acrobat 富媒体 PDF",
+            SuggestedFileName = $"{System.IO.Path.GetFileNameWithoutExtension(ViewModel.DocumentPath)}-acrobat-rich-media.pdf",
+            FileTypeChoices = new[] { new FilePickerFileType("PDF 文档") { Patterns = new[] { "*.pdf" } } },
+        });
+        var path = file?.Path.LocalPath;
+        if (!string.IsNullOrWhiteSpace(path)) await ViewModel.ExportAcrobatRichMediaPdfAsync(path);
+        e.Handled = true;
+    }
+
     private async void CreateBookmarkClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
         if (!ViewModel.HasDocument)
@@ -1339,9 +1352,16 @@ public partial class MainWindow : Window
         Dispatcher.UIThread.Post(SaveBookmarkExpansionCache, DispatcherPriority.Background);
     }
 
+    private void BookmarkContextMenuOpened(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        // Context-menu actions can rebuild the tree immediately; capture the visual state first.
+        SaveBookmarkExpansionCache();
+    }
+
     private void BookmarkTreeDataChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         Dispatcher.UIThread.Post(RestoreBookmarkExpansionCache, DispatcherPriority.Loaded);
+        Dispatcher.UIThread.Post(SaveBookmarkExpansionCache, DispatcherPriority.Background);
     }
 
     private void SaveBookmarkExpansionCache()

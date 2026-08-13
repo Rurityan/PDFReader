@@ -69,6 +69,7 @@ public sealed class ReaderDbContextFactory
 
         database.Database.EnsureCreated();
         EnsureColumn(database, "PdfDocuments", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(database, "OcrRecords", "IsExternalImport", "INTEGER NOT NULL DEFAULT 0");
     }
 
     private static void EnsureColumn(ReaderDbContext database, string table, string column, string definition)

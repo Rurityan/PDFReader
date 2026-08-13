@@ -22,6 +22,7 @@ public sealed class OcrRecord : INotifyPropertyChanged
     public string Title { get; set; } = string.Empty;
     public string Text { get; set; } = string.Empty;
     public string? CapturePath { get; set; }
+    public bool IsExternalImport { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 
     public PdfDocument? PdfDocument { get; set; }

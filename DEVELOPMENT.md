@@ -122,7 +122,7 @@ API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱�
 
 导入文件时，若当前 PDF 记录没有本地书签，应用先尝试读取 `PDFReader-metadata.json` 并恢复书签树、OCR 与音频文件；未检测到该附件时，回退到读取普通 PDF Outline。恢复副本会分配新的本地 UUID，避免与原 PDF 记录的数据库主键冲突。
 
-应用启动后会在后台运行一次一致性清理：删除无效文档或书签关联的 OCR、无主音频记录及其已知资源；失效的书签父级关系会被提升为根书签。该任务不扫描资源目录删除未被数据库引用的任意文件。
+应用启动后会在后台运行一次一致性清理：删除无效文档或书签关联的 OCR、无主音频记录及其已知资源；失效的书签父级关系会被提升为根书签。REST 导入的未挂载 OCR 会标记为外部导入并保留，直到挂载到书签；手动产生的未挂载 OCR 仍会按退出清理规则处理。该任务不扫描资源目录删除未被数据库引用的任意文件。
 
 ## 5. 数据库结构
 
@@ -182,7 +182,7 @@ API Key 在配置文件中使用 DPAPI 加密保存，设置界面只显示脱�
 
 音频记录随 OCR 记录级联删除。播放前会检查文件是否存在，OCR 项会显示当前是否有可用音频。
 
-顶部“朗读”按钮可以播放当前页所有可用 OCR 音频。任意 OCR 音频或当前页连续朗读处于播放状态时，按钮显示“停止播放”；音频自然结束、出错或手动停止后恢复为“朗读”。
+顶部“朗读”按钮从当前页开始，按页向后连续播放所有可用 VOC 音频，并在进入下一页时同步翻页；播放中按钮显示“停止播放”。旁边的“朗读本页”按钮只播放当前页已有的 VOC，不自动生成音频、不翻页。音频自然结束、出错或手动停止后恢复正常状态。
 
 PDF 标注不写入 SQLite，而是直接保存为 PDF annotation 对象，并使用 `/NM` 保存 UUID 形式的对象标识。
 
@@ -306,6 +306,8 @@ python -m pip install -r Scripts/requirements-ocr.txt
 ```
 
 默认模型目录为应用目录下的 `ocr_model/`，内置官方 PP-OCRv5 server ONNX 模型：`det.onnx`、`rec.onnx` 和识别模型的 `inference.yml`（也可使用 `ppocr_keys_v1.txt`）。该组合面向高准确率中文、繁体中文、英文和日文识别；检测长边默认按 960 像素预处理，识别输入固定高 48 像素。设备选择通过 `PDFREADER_OCR_DEVICE` 控制：`auto` 默认优先 DirectML，`cpu` 强制 CPU，`directml` 强制 DirectML。也可以用 `PDFREADER_OCR_MODEL_DIR`、`PDFREADER_OCR_DET_MODEL`、`PDFREADER_OCR_REC_MODEL` 和 `PDFREADER_OCR_DICTIONARY` 覆盖资源路径。
+
+Adobe Acrobat 富媒体导出通过 `Scripts/rich_media_worker.py`、`pikepdf` 和 `miniaudio` 写入 PDF 标准 Sound Annotation；普通启动、OCR、标注保存和 PDFReader 全量导出不加载这些库。x64 的 `requirements-ocr.txt` 和安装包已包含这些依赖，发布脚本会校验 `pikepdf` 可被导入。MP3 会在导出时解码为 44100 Hz、单声道、16-bit Signed PCM，以避免 Acrobat 将 MP3 字节误当采样数据而播放噪声。同一 OCR 区域有多个音频时，按钮会横向错开；按钮位于 OCR 区域右上角，尺寸约 14-20 pt 并带半透明显示；PDF 坐标会从页面左上原点转换为 PDF 左下原点。导出的音频会作为 PDF 附件保存，并在对应 OCR 区域生成可由 Acrobat 识别的声音注释；PDFReader 专用 OCR 清单也会一并保留。`pikepdf 9.10.2` 暂无 Windows ARM64 官方 wheel，因此 ARM64 发布包不包含该依赖，调用导出时会显示安装提示。
 
 建议验证以下流程：
 

@@ -69,6 +69,11 @@ For each valid record, PDFReader:
 
 The API does not call OCR or TTS models. It only imports final results.
 
+REST-imported OCR records are marked as externally imported. If no same-page bookmark exists,
+they remain unattached and are preserved by startup cleanup. Creating a bookmark on that page
+or choosing `重新读取 OCR 记录` from the bookmark context menu attaches those pending records;
+after attachment they follow the normal bookmark-owned lifecycle.
+
 ### Duplicate Requests
 
 The import is idempotent for the same OCR data. A record is considered a duplicate when

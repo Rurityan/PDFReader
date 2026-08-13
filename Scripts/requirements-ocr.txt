@@ -3,3 +3,5 @@ opencv-contrib-python==4.10.0.84
 pyclipper==1.4.0
 onnxruntime-directml==1.23.0
 PyMuPDF==1.26.7
+pikepdf==9.10.2
+miniaudio==1.71
