@@ -4391,6 +4391,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         OnPropertyChanged(nameof(ReadCurrentPageButtonText));
         OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanReadPageOnly));
     }
 
     partial void OnIsAudioPlayingChanged(bool value)
