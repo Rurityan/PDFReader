@@ -613,6 +613,11 @@ public partial class MainWindow : Window
 
     private void DocumentScrollViewerPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (TryHandleZoomWheel(e))
+        {
+            return;
+        }
+
         if (!ViewModel.IsCurrentPageOcrVisible || ViewModel.IsAnnotationMode || ViewModel.CanCapture)
         {
             return;
@@ -631,6 +636,37 @@ public partial class MainWindow : Window
             ViewModel.ResumeContinuousReadingAtPage(ViewModel.CurrentPageNumber + 1);
             e.Handled = true;
         }
+    }
+
+    private void ContinuousReadingListPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        TryHandleZoomWheel(e);
+    }
+
+    private bool TryHandleZoomWheel(PointerWheelEventArgs e)
+    {
+        if (!ViewModel.HasDocument || !e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.Delta.Y == 0)
+        {
+            return false;
+        }
+
+        _ = ViewModel.ChangeZoomAsync(e.Delta.Y > 0 ? 0.10 : -0.10);
+        e.Handled = true;
+        return true;
+    }
+
+    private async void ZoomInputKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter)
+        {
+            await ViewModel.ApplyZoomInputAsync();
+            e.Handled = true;
+        }
+    }
+
+    private async void ZoomInputLostFocus(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
+    {
+        await ViewModel.ApplyZoomInputAsync();
     }
 
     private void ContinuousReadingListScrollChanged(object? sender, ScrollChangedEventArgs e)

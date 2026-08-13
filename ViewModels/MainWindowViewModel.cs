@@ -1518,25 +1518,58 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task ZoomInAsync()
     {
-        if (HasDocument)
-        {
-            _zoom = Math.Min(3.0, _zoom + 0.25);
-            ClearPrefetchedPageImages();
-            await ShowPageAsync(_currentPage);
-            InitializeReadingPages();
-        }
+        await ChangeZoomAsync(0.25);
     }
 
     [RelayCommand]
     private async Task ZoomOutAsync()
     {
-        if (HasDocument)
+        await ChangeZoomAsync(-0.25);
+    }
+
+    public async Task ChangeZoomAsync(double delta)
+    {
+        await SetZoomAsync(_zoom + delta);
+    }
+
+    public async Task ApplyZoomInputAsync()
+    {
+        if (!HasDocument)
         {
-            _zoom = Math.Max(0.5, _zoom - 0.25);
-            ClearPrefetchedPageImages();
-            await ShowPageAsync(_currentPage);
-            InitializeReadingPages();
+            return;
         }
+
+        var input = ZoomIndicator.Trim().TrimEnd('%').Trim();
+        if (!double.TryParse(input, out var percent))
+        {
+            ZoomIndicator = $"{_zoom:P0}";
+            StatusMessage = "请输入有效的缩放百分比";
+            return;
+        }
+
+        await SetZoomAsync(percent / 100);
+    }
+
+    private async Task SetZoomAsync(double zoom)
+    {
+        if (!HasDocument || IsBusy)
+        {
+            return;
+        }
+
+        var normalizedZoom = Math.Clamp(Math.Round(zoom, 2), 0.5, 3.0);
+        if (Math.Abs(_zoom - normalizedZoom) < 0.001)
+        {
+            ZoomIndicator = $"{_zoom:P0}";
+            return;
+        }
+
+        _zoom = normalizedZoom;
+        ZoomIndicator = $"{_zoom:P0}";
+        OnPropertyChanged(nameof(CurrentZoom));
+        ClearPrefetchedPageImages();
+        await ShowPageAsync(_currentPage);
+        InitializeReadingPages();
     }
 
     [RelayCommand]

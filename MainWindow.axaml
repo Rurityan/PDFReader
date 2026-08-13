@@ -154,7 +154,17 @@
                         ToolTip.Tip="撤回删除" />
                 <StackPanel Grid.Column="8" Orientation="Horizontal" Spacing="6">
                     <Button Command="{Binding ZoomOutCommand}" Padding="9,7" Content="-" />
-                    <TextBlock Text="{Binding ZoomIndicator}" Width="52" TextAlignment="Center" VerticalAlignment="Center" Foreground="#4A5560" />
+                    <TextBox x:Name="ZoomInput"
+                             Text="{Binding ZoomIndicator, Mode=TwoWay}"
+                             Width="58"
+                             Height="30"
+                             Padding="4,2"
+                             TextAlignment="Center"
+                             VerticalContentAlignment="Center"
+                             IsEnabled="{Binding HasDocument}"
+                             KeyDown="ZoomInputKeyDown"
+                             LostFocus="ZoomInputLostFocus"
+                             ToolTip.Tip="输入 50% 到 300% 的缩放比例" />
                     <Button Command="{Binding ZoomInCommand}" Padding="9,7" Content="+" />
                 </StackPanel>
                 <StackPanel Grid.Column="9"
@@ -488,7 +498,8 @@
                              IsVisible="{Binding IsContinuousReadingMode}"
                              ItemsSource="{Binding ReadingPages}"
                              Background="Transparent"
-                             BorderThickness="0">
+                             BorderThickness="0"
+                             PointerWheelChanged="ContinuousReadingListPointerWheelChanged">
                         <ListBox.ItemsPanel>
                             <ItemsPanelTemplate>
                                 <VirtualizingStackPanel />
