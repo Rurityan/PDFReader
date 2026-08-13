@@ -15,6 +15,7 @@ public sealed class AudioPlaybackService : IDisposable
     public event EventHandler? PlaybackStateChanged;
 
     public bool IsPlaying => _mediaPlayer?.IsPlaying == true;
+    public bool IsPaused => _mediaPlayer?.State == VLCState.Paused;
 
     public void Play(string filePath)
     {
@@ -67,6 +68,28 @@ public sealed class AudioPlaybackService : IDisposable
     public void Stop()
     {
         _mediaPlayer?.Stop();
+        NotifyPlaybackStateChanged();
+    }
+
+    public void Pause()
+    {
+        if (_mediaPlayer is null)
+        {
+            return;
+        }
+
+        _mediaPlayer.Pause();
+        NotifyPlaybackStateChanged();
+    }
+
+    public void Resume()
+    {
+        if (_mediaPlayer is null)
+        {
+            return;
+        }
+
+        _mediaPlayer.Play();
         NotifyPlaybackStateChanged();
     }
 

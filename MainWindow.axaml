@@ -107,7 +107,7 @@
                           VerticalScrollBarVisibility="Disabled"
                           HorizontalAlignment="Stretch">
                 <Grid MinWidth="1420"
-                      ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto"
+                      ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto"
                       VerticalAlignment="Center"
                       Margin="0,0,0,14">
                 <Button Grid.Column="0"
@@ -265,6 +265,13 @@
                         Content="{Binding ReadPageOnlyButtonText}"
                         Command="{Binding ReadPageOnlyCommand}"
                         IsEnabled="{Binding CanReadPageOnly}" />
+                <Button Grid.Column="15"
+                        Margin="6,0,0,0"
+                        Padding="12,7"
+                        Content="{Binding AudioPauseButtonText}"
+                        Command="{Binding TogglePauseAudioCommand}"
+                        IsVisible="{Binding IsAudioControlsVisible}"
+                        IsEnabled="{Binding IsAudioControlsVisible}" />
                 </Grid>
             </ScrollViewer>
         </Border>

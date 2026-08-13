@@ -451,11 +451,13 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     public bool CanReadCurrentPage => HasDocument
         && (IsReadingCurrentPage
             || IsAudioPlaying
+            || IsAudioPaused
             || (!IsBusy && !IsTtsBusy && !IsAnnotationMode
                 && CurrentPageOcrRecords.Any(record => record.HasAudio)));
     public bool CanReadPageOnly => HasDocument
         && !IsReadingCurrentPage
         && !IsAudioPlaying
+        && !IsAudioPaused
         && !IsBusy
         && !IsTtsBusy
         && !IsAnnotationMode
@@ -492,7 +494,11 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         AnnotationTool.Eraser => "橡皮擦",
         _ => "文本标注",
     };
-    public string ReadCurrentPageButtonText => IsReadingCurrentPage || IsAudioPlaying
+    public bool IsAudioPaused { get; private set; }
+    public bool IsAudioActive => IsAudioPlaying || IsAudioPaused;
+    public bool IsAudioControlsVisible => IsAudioActive;
+    public string AudioPauseButtonText => IsAudioPaused ? "继续播放" : "暂停播放";
+    public string ReadCurrentPageButtonText => IsReadingCurrentPage || IsAudioActive
         ? "停止播放"
         : "朗读";
     public string ReadPageOnlyButtonText => "朗读本页";
@@ -612,7 +618,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     [RelayCommand(AllowConcurrentExecutions = true)]
     private async Task ToggleReadCurrentPageAsync()
     {
-        if (IsAudioPlaying || IsReadingCurrentPage)
+        if (IsAudioActive || IsReadingCurrentPage)
         {
             _readingCancellation?.Cancel();
             _audioPlaybackService.Stop();
@@ -674,6 +680,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             cancellation.Dispose();
             IsReadingCurrentPage = false;
             SetAudioPlaying(false);
+            SetAudioPaused(false);
             OnPropertyChanged(nameof(CanReadPageOnly));
         }
     }
@@ -750,6 +757,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                 cancellation!.Dispose();
                 IsReadingCurrentPage = false;
                 SetAudioPlaying(false);
+                SetAudioPaused(false);
             }
         }
     }
@@ -3445,6 +3453,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _audioPlaybackService.Play(record.LatestAudioPath);
             SetAudioPlaying(true);
+            SetAudioPaused(false);
             StatusMessage = "正在播放 OCR 音频";
         }
         catch (Exception exception)
@@ -3465,6 +3474,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         {
             _audioPlaybackService.Play(GeneratedAudioPath);
             SetAudioPlaying(true);
+            SetAudioPaused(false);
             StatusMessage = "正在播放音频";
         }
         catch (Exception exception)
@@ -3478,17 +3488,61 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     {
         _audioPlaybackService.Stop();
         SetAudioPlaying(false);
+        SetAudioPaused(false);
         StatusMessage = "音频已停止";
+    }
+
+    [RelayCommand]
+    private void TogglePauseAudio()
+    {
+        if (!IsAudioActive)
+        {
+            return;
+        }
+
+        if (IsAudioPaused)
+        {
+            _audioPlaybackService.Resume();
+            SetAudioPaused(false);
+            StatusMessage = "继续播放音频";
+        }
+        else
+        {
+            _audioPlaybackService.Pause();
+            SetAudioPaused(true);
+            StatusMessage = "音频已暂停";
+        }
     }
 
     private void AudioPlaybackStateChanged(object? sender, EventArgs e)
     {
         SetAudioPlaying(_audioPlaybackService.IsPlaying);
+        SetAudioPaused(_audioPlaybackService.IsPaused);
     }
 
     private void SetAudioPlaying(bool value)
     {
         IsAudioPlaying = value;
+        OnPropertyChanged(nameof(IsAudioActive));
+        OnPropertyChanged(nameof(IsAudioControlsVisible));
+        OnPropertyChanged(nameof(ReadCurrentPageButtonText));
+        OnPropertyChanged(nameof(AudioPauseButtonText));
+    }
+
+    private void SetAudioPaused(bool value)
+    {
+        if (IsAudioPaused == value)
+        {
+            return;
+        }
+
+        IsAudioPaused = value;
+        OnPropertyChanged(nameof(IsAudioActive));
+        OnPropertyChanged(nameof(IsAudioControlsVisible));
+        OnPropertyChanged(nameof(AudioPauseButtonText));
+        OnPropertyChanged(nameof(ReadCurrentPageButtonText));
+        OnPropertyChanged(nameof(CanReadCurrentPage));
+        OnPropertyChanged(nameof(CanReadPageOnly));
     }
 
     private ReaderSettings CreateReaderSettings()
