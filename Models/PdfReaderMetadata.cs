@@ -22,6 +22,7 @@ public sealed class PdfReaderMetadataOcrRecord
 {
     public Guid Id { get; set; }
     public Guid? BookmarkId { get; set; }
+    public bool AllowStandalone { get; set; }
     public int PageNumber { get; set; }
     public double X { get; set; }
     public double Y { get; set; }

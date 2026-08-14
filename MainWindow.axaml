@@ -694,17 +694,24 @@
                                 <Button Grid.Row="1" Grid.Column="0" Content="放弃结果" Command="{Binding CancelOcrCommand}" Click="CancelOcrClick" IsEnabled="{Binding CanCancelOcr}" Padding="10,7" />
                                 <Button Grid.Row="0" Grid.Column="1" Content="截取一次" Command="{Binding CaptureOnceCommand}" IsEnabled="{Binding CanSelectCaptureMode}" Padding="10,7" />
                                 <Button Grid.Row="1" Grid.Column="1" Content="持续截取" Command="{Binding ToggleContinuousCaptureCommand}" IsEnabled="{Binding CanSelectCaptureMode}" Padding="10,7" />
+                                <Button Grid.Row="2" Grid.Column="0" Content="保存" Command="{Binding SaveOcrCommand}" IsEnabled="{Binding CanConfirmOcr}" Padding="10,7" />
                                 <Button Grid.Row="2" Grid.Column="1" Content="取消截取" Command="{Binding CancelCaptureModeCommand}" IsEnabled="{Binding CanCancelCapture}" Padding="10,7" />
                             </Grid>
                             <TextBox Text="{Binding OcrTitle}" PlaceholderText="OCR 标题" />
                             <TextBox Text="{Binding OcrText}" AcceptsReturn="True" TextWrapping="Wrap" MinHeight="150" MaxHeight="280" />
-                            <Button Content="确认并保存 OCR" Command="{Binding SaveOcrCommand}" IsEnabled="{Binding CanConfirmOcr}" HorizontalAlignment="Left" Padding="12,7" />
                             <TextBlock Text="{Binding LastCapturePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
                         </StackPanel>
                     </Border>
                     <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
-                            <TextBlock Text="OCR 历史记录" FontWeight="SemiBold" Foreground="#414B55" />
+                            <Grid ColumnDefinitions="*,Auto">
+                                <TextBlock Text="OCR 待处理记录" FontWeight="SemiBold" Foreground="#414B55" />
+                                <Button Grid.Column="1"
+                                        Content="清除"
+                                        Click="ClearOcrRecordClick"
+                                        IsEnabled="{Binding CanClearOcr}"
+                                        Padding="9,4" />
+                            </Grid>
                     <ListBox x:Name="OcrHistoryList"
                              ItemsSource="{Binding OcrProcessingQueue}"
                              SelectedItem="{Binding SelectedOcrHistoryRecord, Mode=TwoWay}"
@@ -730,9 +737,9 @@
                                 Command="{Binding GenerateSpeechCommand}"
                                 IsEnabled="{Binding CanGenerateSpeech}"
                                 Padding="12,7" />
-                        <Button Content="清除记录"
-                                Click="ClearOcrRecordClick"
-                                IsEnabled="{Binding CanClearOcr}"
+                        <Button Content="仅保存"
+                                Command="{Binding SaveOcrOnlyCommand}"
+                                IsEnabled="{Binding CanConfirmOcr}"
                                 Padding="12,7" />
                     </StackPanel>
                         </StackPanel>

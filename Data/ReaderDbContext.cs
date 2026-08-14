@@ -52,6 +52,7 @@ public sealed class ReaderDbContext : DbContext
             entity.Property(record => record.Title).IsRequired();
             entity.Property(record => record.Text).IsRequired();
             entity.Property(record => record.IsExternalImport).HasDefaultValue(false);
+            entity.Property(record => record.AllowStandalone).HasDefaultValue(false);
             entity.HasOne(record => record.PdfDocument)
                 .WithMany(document => document.OcrRecords)
                 .HasForeignKey(record => record.PdfDocumentId)

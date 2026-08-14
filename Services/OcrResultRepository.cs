@@ -75,6 +75,7 @@ public sealed class OcrResultRepository
 
         record.BookmarkId = bookmarkId;
         record.IsExternalImport = false;
+        record.AllowStandalone = false;
         await database.SaveChangesAsync(cancellationToken);
     }
 
@@ -135,7 +136,7 @@ public sealed class OcrResultRepository
         using var database = _contextFactory.Create();
         var orphanedRecords = database.OcrRecords
             .Include(record => record.TtsAudios)
-            .Where(record => record.BookmarkId == null && !record.IsExternalImport)
+            .Where(record => record.BookmarkId == null && !record.IsExternalImport && !record.AllowStandalone)
             .ToList();
         if (orphanedRecords.Count == 0)
         {
@@ -163,13 +164,13 @@ public sealed class OcrResultRepository
         var bookmarkById = bookmarks.ToDictionary(bookmark => bookmark.Id);
         var records = database.OcrRecords.Include(record => record.TtsAudios).ToList();
 
-        // A record is only valid when it remains attached to a bookmark in the same PDF document.
+        // A record is valid when attached to its document's bookmark, externally imported, or explicitly retained alone.
         var orphanedRecords = records.Where(record =>
                 !documents.Contains(record.PdfDocumentId)
                 || (record.BookmarkId is not null
                     && (!bookmarkById.TryGetValue(record.BookmarkId.Value, out var bookmark)
                         || bookmark.PdfDocumentId != record.PdfDocumentId))
-                || (record.BookmarkId is null && !record.IsExternalImport))
+                || (record.BookmarkId is null && !record.IsExternalImport && !record.AllowStandalone))
             .ToList();
         var orphanedRecordIds = orphanedRecords.Select(record => record.Id).ToHashSet();
         var orphanedAudios = database.TtsAudioRecords

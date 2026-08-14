@@ -54,6 +54,7 @@ public sealed class OcrRecord : INotifyPropertyChanged
     }
     public string? CapturePath { get; set; }
     public bool IsExternalImport { get; set; }
+    public bool AllowStandalone { get; set; }
     public DateTime CreatedAtUtc { get; set; }
 
     public PdfDocument? PdfDocument { get; set; }

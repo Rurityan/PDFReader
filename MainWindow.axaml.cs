@@ -1275,6 +1275,8 @@ public partial class MainWindow : Window
                 records,
                 ViewModel.DeleteOcrRecordAsync,
                 ViewModel.DeleteOcrAudiosAsync,
+                ViewModel.GetConfiguredVoiceModels(),
+                ViewModel.GenerateSpeechForRecordAsync,
                 ViewModel.CanModifyDocument);
             await window.ShowDialog(this);
             ViewModel.RefreshResourceRelatedViews();

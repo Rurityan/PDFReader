@@ -70,9 +70,15 @@ public sealed class ReaderDbContextFactory
         database.Database.EnsureCreated();
         EnsureColumn(database, "PdfDocuments", "IsArchived", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(database, "OcrRecords", "IsExternalImport", "INTEGER NOT NULL DEFAULT 0");
+        if (EnsureColumn(database, "OcrRecords", "AllowStandalone", "INTEGER NOT NULL DEFAULT 0"))
+        {
+            // Existing unattached local records predate the explicit retention flag. Keep them to avoid data loss.
+            database.Database.ExecuteSqlRaw(
+                "UPDATE OcrRecords SET AllowStandalone = 1 WHERE BookmarkId IS NULL AND IsExternalImport = 0");
+        }
     }
 
-    private static void EnsureColumn(ReaderDbContext database, string table, string column, string definition)
+    private static bool EnsureColumn(ReaderDbContext database, string table, string column, string definition)
     {
         var connection = database.Database.GetDbConnection();
         var wasOpen = connection.State == ConnectionState.Open;
@@ -86,7 +92,10 @@ public sealed class ReaderDbContextFactory
                 using var alter = connection.CreateCommand();
                 alter.CommandText = $"ALTER TABLE {table} ADD COLUMN {column} {definition};";
                 alter.ExecuteNonQuery();
+                return true;
             }
+
+            return false;
         }
         finally
         {

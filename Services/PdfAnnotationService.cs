@@ -78,7 +78,7 @@ public sealed class PdfAnnotationService
                 bookmarks = outline,
                 ocrRecords = ocrRecords.Select(record => new
                 {
-                    id = record.Id, bookmarkId = record.BookmarkId, record.PageNumber, record.X, record.Y,
+                    id = record.Id, bookmarkId = record.BookmarkId, record.AllowStandalone, record.PageNumber, record.X, record.Y,
                     record.Width, record.Height, record.CaptureZoom, record.Title, record.Text, record.CreatedAtUtc,
                     audioFiles = record.TtsAudios.Where(audio => File.Exists(audio.FilePath)).Select(audio => new { audio.Id, audio.FilePath, audio.CreatedAtUtc }),
                 }),

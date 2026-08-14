@@ -14,6 +14,7 @@
             <StackPanel Spacing="4">
                 <TextBlock Text="资源管理" Foreground="White" FontSize="19" FontWeight="SemiBold" />
                 <TextBlock Text="当前 PDF 的 OCR 记录及其关联音频" Foreground="#C7CDD4" />
+                <TextBlock x:Name="ResourceSummaryText" Foreground="#E1B968" FontWeight="SemiBold" />
             </StackPanel>
         </Border>
         <Border Grid.Row="1" Background="White" BorderBrush="#D9DDE2" BorderThickness="0,0,0,1" Padding="16,12">
@@ -45,9 +46,15 @@
                                     <TextBlock Text="{Binding ResourceAudioStatusText}" Foreground="#4A5560" />
                                 </StackPanel>
                                 <StackPanel Grid.Column="1" Grid.RowSpan="3" Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                    <Button Content="生成音频"
+                                            Click="GenerateAudioClick"
+                                            IsVisible="{Binding !HasAudio}"
+                                            IsEnabled="{Binding #RootWindow.CanModifyResources}"
+                                            Padding="10,6" />
                                     <Button Content="删除音频"
                                             Tag="audio"
                                             Click="DeleteAudioClick"
+                                            IsVisible="{Binding HasAudio}"
                                             IsEnabled="{Binding #RootWindow.CanModifyResources}"
                                             Padding="10,6" />
                                     <Button Content="删除 OCR"

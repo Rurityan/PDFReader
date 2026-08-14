@@ -11,9 +11,11 @@ namespace PDFReader;
 
 public partial class ResourceManagerWindow : Window
 {
-    private readonly IReadOnlyList<OcrRecord> _records;
+    private readonly List<OcrRecord> _records;
     private readonly Func<OcrRecord, Task<bool>> _deleteOcr;
     private readonly Func<OcrRecord, Task<bool>> _deleteAudios;
+    private readonly IReadOnlyList<TtsVoiceModelOption> _voiceModels;
+    private readonly Func<OcrRecord, string, Task> _generateAudio;
     private readonly ObservableCollection<OcrRecord> _filteredRecords = new();
     private bool _isInitialized;
 
@@ -24,6 +26,8 @@ public partial class ResourceManagerWindow : Window
             Array.Empty<OcrRecord>(),
             _ => Task.FromResult(false),
             _ => Task.FromResult(false),
+            Array.Empty<TtsVoiceModelOption>(),
+            (_, _) => Task.CompletedTask,
             false)
     {
     }
@@ -32,11 +36,15 @@ public partial class ResourceManagerWindow : Window
         IReadOnlyList<OcrRecord> records,
         Func<OcrRecord, Task<bool>> deleteOcr,
         Func<OcrRecord, Task<bool>> deleteAudios,
+        IReadOnlyList<TtsVoiceModelOption> voiceModels,
+        Func<OcrRecord, string, Task> generateAudio,
         bool canModifyResources = true)
     {
-        _records = records ?? Array.Empty<OcrRecord>();
+        _records = records?.ToList() ?? new List<OcrRecord>();
         _deleteOcr = deleteOcr ?? (_ => Task.FromResult(false));
         _deleteAudios = deleteAudios ?? (_ => Task.FromResult(false));
+        _voiceModels = voiceModels ?? Array.Empty<TtsVoiceModelOption>();
+        _generateAudio = generateAudio ?? ((_, _) => Task.CompletedTask);
         CanModifyResources = canModifyResources;
         InitializeComponent();
         DataContext = this;
@@ -65,6 +73,11 @@ public partial class ResourceManagerWindow : Window
 
     private void ApplyFilter()
     {
+        foreach (var record in _records)
+        {
+            record.RefreshAudioStatus();
+        }
+
         var search = SearchBox?.Text?.Trim() ?? string.Empty;
         var filter = FilterBox?.SelectedIndex ?? 0;
         var records = _records.Where(record =>
@@ -78,10 +91,10 @@ public partial class ResourceManagerWindow : Window
         _filteredRecords.Clear();
         foreach (var record in records)
         {
-            record.RefreshAudioStatus();
             _filteredRecords.Add(record);
         }
 
+        ResourceSummaryText.Text = $"OCR {_records.Count} 条 · VOC {_records.Count(record => record.HasAudio)} 条";
         EmptyText.IsVisible = _filteredRecords.Count == 0;
     }
 
@@ -108,6 +121,45 @@ public partial class ResourceManagerWindow : Window
         e.Handled = true;
     }
 
+    private void GenerateAudioClick(object? sender, RoutedEventArgs e)
+    {
+        var record = GetRecord(sender);
+        if (record is null || record.HasAudio || !CanModifyResources)
+        {
+            return;
+        }
+
+        var menu = new ContextMenu();
+        if (_voiceModels.Count == 0)
+        {
+            menu.Items.Add(new MenuItem { Header = "未配置 Voice Model", IsEnabled = false });
+        }
+        else
+        {
+            foreach (var voiceModel in _voiceModels)
+            {
+                var item = new MenuItem { Header = voiceModel.Name, Tag = (record, voiceModel.Name) };
+                item.Click += GenerateAudioWithVoiceClick;
+                menu.Items.Add(item);
+            }
+        }
+
+        menu.Open((Control)sender!);
+        e.Handled = true;
+    }
+
+    private async void GenerateAudioWithVoiceClick(object? sender, RoutedEventArgs e)
+    {
+        if ((sender as MenuItem)?.Tag is ValueTuple<OcrRecord, string> request)
+        {
+            await _generateAudio(request.Item1, request.Item2);
+            request.Item1.RefreshAudioStatus();
+            ApplyFilter();
+        }
+
+        e.Handled = true;
+    }
+
     private async void DeleteOcrClick(object? sender, RoutedEventArgs e)
     {
         var record = GetRecord(sender);
@@ -123,8 +175,8 @@ public partial class ResourceManagerWindow : Window
         {
             if (await _deleteOcr(record))
             {
-                _filteredRecords.Remove(record);
-                EmptyText.IsVisible = _filteredRecords.Count == 0;
+                _records.Remove(record);
+                ApplyFilter();
             }
         }
 

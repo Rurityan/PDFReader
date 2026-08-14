@@ -444,7 +444,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         && OcrProcessingQueue.Contains(SelectedOcrRecord)
         && !IsBusy && !IsDocumentReadOnly
         && !IsOcrBusy;
-    public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is not null && !IsTtsBusy && !IsDocumentReadOnly;
+    public bool CanGenerateSpeech => HasDocument && SelectedOcrRecord is { IsPersisted: true } && !IsTtsBusy && !IsDocumentReadOnly;
     public bool CanClearOcr => HasDocument && SelectedOcrRecord is not null
         && OcrProcessingQueue.Contains(SelectedOcrRecord)
         && SelectedOcrRecord.BookmarkId is null
@@ -2198,6 +2198,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
                     Id = Guid.NewGuid(), PdfDocumentId = _documentId,
                     BookmarkId = item.BookmarkId is Guid bookmarkId && bookmarkIds.TryGetValue(bookmarkId, out var mappedBookmarkId)
                         ? mappedBookmarkId : recoveryBookmark?.Id,
+                    AllowStandalone = item.AllowStandalone,
                     PageNumber = Math.Max(1, item.PageNumber), X = item.X, Y = item.Y, Width = item.Width, Height = item.Height,
                     CaptureZoom = item.CaptureZoom > 0 ? item.CaptureZoom : 1, Title = item.Title, Text = item.Text,
                     CreatedAtUtc = item.CreatedAtUtc == default ? now : item.CreatedAtUtc,
@@ -3411,7 +3412,14 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             await _ocrRepository.AddAudioAsync(audio);
             record.TtsAudios.Add(audio);
             record.RefreshAudioStatus();
+            var currentRecord = OcrHistory.FirstOrDefault(item => item.Id == record.Id);
+            if (currentRecord is not null && !ReferenceEquals(currentRecord, record))
+            {
+                currentRecord.TtsAudios.Add(audio);
+                currentRecord.RefreshAudioStatus();
+            }
             GeneratedAudioPath = record.LatestAudioPath ?? audioPath;
+            RefreshResourceRelatedViews();
             StatusMessage = "语音生成完成";
         }
         catch (Exception exception)
@@ -3646,7 +3654,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     }
 
     [RelayCommand]
-    private async Task SaveOcrAsync()
+    private Task SaveOcrAsync() => PersistOcrAsync(attachMatchingBookmark: true);
+
+    [RelayCommand]
+    private Task SaveOcrOnlyAsync() => PersistOcrAsync(attachMatchingBookmark: false);
+
+    private async Task PersistOcrAsync(bool attachMatchingBookmark)
     {
         var record = SelectedOcrHistoryRecord ?? SelectedOcrRecord;
         if (!HasPendingOcr || record is null || record.IsProcessing || record.IsPersisted
@@ -3659,8 +3672,9 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         try
         {
             IsOcrBusy = true;
-            var matchingBookmark = FindBookmarkForPage(record.PageNumber);
+            var matchingBookmark = attachMatchingBookmark ? FindBookmarkForPage(record.PageNumber) : null;
             record.BookmarkId = matchingBookmark?.Id;
+            record.AllowStandalone = !attachMatchingBookmark;
             record.Title = string.IsNullOrWhiteSpace(OcrTitle) ? CreateDefaultOcrTitle(OcrText) : OcrTitle.Trim();
             record.Text = OcrText.Trim();
             await _ocrRepository.AddAsync(record);
@@ -3677,7 +3691,7 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             SelectNextOcrQueueItem(record);
             NotifyBookmarkChanged();
             StatusMessage = matchingBookmark is null
-                ? "OCR 结果已保存，请选择书签进行挂载"
+                ? "OCR 结果已仅保存，等待挂载到书签"
                 : $"OCR 结果已保存并挂载到书签：{matchingBookmark.Title}";
         }
         catch (Exception exception)
