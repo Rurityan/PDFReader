@@ -9,7 +9,7 @@
         MinHeight="330"
         WindowStartupLocation="CenterOwner">
     <Grid RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12" Background="#F5F6F8" Margin="20">
-        <TextBlock Text="选择父书签" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
+        <TextBlock x:Name="PromptText" Text="选择父书签" FontSize="16" FontWeight="SemiBold" Foreground="#303943" />
         <TextBox x:Name="SearchInput"
                  Grid.Row="1"
                  PlaceholderText="输入书签名称筛选"

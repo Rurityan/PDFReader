@@ -76,6 +76,41 @@ public sealed class OcrResultRepository
         record.BookmarkId = bookmarkId;
         record.IsExternalImport = false;
         record.AllowStandalone = false;
+        record.IsHiddenFromProcessingQueue = false;
+        await database.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetProcessingQueueVisibilityAsync(
+        Guid ocrRecordId,
+        bool isHidden,
+        CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var record = await database.OcrRecords
+            .SingleOrDefaultAsync(item => item.Id == ocrRecordId, cancellationToken);
+        if (record is null)
+        {
+            throw new InvalidOperationException("找不到要更新的 OCR 记录。");
+        }
+
+        record.IsHiddenFromProcessingQueue = isHidden;
+        await database.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SetAllowStandaloneAsync(
+        Guid ocrRecordId,
+        bool allowStandalone,
+        CancellationToken cancellationToken = default)
+    {
+        await using var database = _contextFactory.Create();
+        var record = await database.OcrRecords
+            .SingleOrDefaultAsync(item => item.Id == ocrRecordId, cancellationToken);
+        if (record is null)
+        {
+            throw new InvalidOperationException("找不到要保留的 OCR 记录。");
+        }
+
+        record.AllowStandalone = allowStandalone;
         await database.SaveChangesAsync(cancellationToken);
     }
 

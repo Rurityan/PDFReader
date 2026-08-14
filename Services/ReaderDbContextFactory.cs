@@ -76,6 +76,7 @@ public sealed class ReaderDbContextFactory
             database.Database.ExecuteSqlRaw(
                 "UPDATE OcrRecords SET AllowStandalone = 1 WHERE BookmarkId IS NULL AND IsExternalImport = 0");
         }
+        EnsureColumn(database, "OcrRecords", "IsHiddenFromProcessingQueue", "INTEGER NOT NULL DEFAULT 0");
     }
 
     private static bool EnsureColumn(ReaderDbContext database, string table, string column, string definition)

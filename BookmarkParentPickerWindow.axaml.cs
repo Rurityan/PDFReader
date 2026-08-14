@@ -18,10 +18,15 @@ public partial class BookmarkParentPickerWindow : Window
     {
     }
 
-    public BookmarkParentPickerWindow(IEnumerable<Bookmark> candidates)
+    public BookmarkParentPickerWindow(
+        IEnumerable<Bookmark> candidates,
+        string? title = null,
+        string? prompt = null)
     {
         InitializeComponent();
         _candidates = candidates.ToList();
+        Title = string.IsNullOrWhiteSpace(title) ? Title : title;
+        PromptText.Text = string.IsNullOrWhiteSpace(prompt) ? PromptText.Text : prompt;
         DataContext = _filtered;
         ApplyFilter();
     }

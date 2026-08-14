@@ -702,7 +702,7 @@
                             <TextBlock Text="{Binding LastCapturePath}" TextWrapping="Wrap" Foreground="#89929C" FontSize="11" />
                         </StackPanel>
                     </Border>
-                    <Border Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
+                    <Border x:Name="OcrProcessingPanel" Background="#F5F7F9" BorderBrush="#E1E5E9" BorderThickness="1" Padding="14">
                         <StackPanel Spacing="8">
                             <Grid ColumnDefinitions="*,Auto">
                                 <TextBlock Text="OCR 待处理记录" FontWeight="SemiBold" Foreground="#414B55" />
@@ -721,7 +721,7 @@
                                     <DataTemplate x:DataType="model:OcrRecord">
                                         <StackPanel Spacing="2" Margin="0,3">
                                             <TextBlock Text="{Binding Title}" TextWrapping="Wrap" Foreground="#61478A" FontWeight="SemiBold" FontSize="12" />
-                                            <TextBlock Text="{Binding QueueStatusText}" Foreground="#89929C" FontSize="10" />
+                                            <TextBlock Text="{Binding QueueStatusText}" Foreground="{Binding QueueStatusBrush}" FontSize="10" />
                                         </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
@@ -739,7 +739,7 @@
                                 Padding="12,7" />
                         <Button Content="仅保存"
                                 Command="{Binding SaveOcrOnlyCommand}"
-                                IsEnabled="{Binding CanConfirmOcr}"
+                                IsEnabled="{Binding CanSaveOcrOnly}"
                                 Padding="12,7" />
                     </StackPanel>
                         </StackPanel>

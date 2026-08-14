@@ -57,6 +57,11 @@
                                             IsVisible="{Binding HasAudio}"
                                             IsEnabled="{Binding #RootWindow.CanModifyResources}"
                                             Padding="10,6" />
+                                    <Button Content="挂载到书签"
+                                            Click="AttachToBookmarkClick"
+                                            IsVisible="{Binding IsUnattached}"
+                                            IsEnabled="{Binding #RootWindow.CanAttachToBookmark}"
+                                            Padding="10,6" />
                                     <Button Content="删除 OCR"
                                             Tag="ocr"
                                             Click="DeleteOcrClick"

@@ -84,6 +84,11 @@ public partial class MainWindow : Window
             BookmarkTreeExpansionCachePointerReleased,
             Avalonia.Interactivity.RoutingStrategies.Bubble,
             true);
+        OcrHistoryList.AddHandler(
+            InputElement.PointerPressedEvent,
+            OcrHistoryPointerPressed,
+            Avalonia.Interactivity.RoutingStrategies.Tunnel,
+            true);
         AddHandler(
             InputElement.PointerPressedEvent,
             WindowPointerPressed,
@@ -143,7 +148,7 @@ public partial class MainWindow : Window
 
     private void WindowPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (IsWithin(e.Source as Visual, OcrHistoryList))
+        if (IsWithin(e.Source as Visual, OcrProcessingPanel))
         {
             return;
         }
@@ -169,6 +174,56 @@ public partial class MainWindow : Window
         }
 
         return false;
+    }
+
+    private void OcrHistoryPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (e.GetCurrentPoint(OcrHistoryList).Properties.PointerUpdateKind != PointerUpdateKind.RightButtonPressed)
+        {
+            return;
+        }
+
+        var record = FindOcrHistoryRecord(e.Source);
+        if (record is null)
+        {
+            return;
+        }
+
+        OcrHistoryList.SelectedItem = record;
+        ViewModel.SelectedOcrHistoryRecord = record;
+        var generate = new MenuItem
+        {
+            Header = "以指定模型生成",
+            Tag = record,
+            IsEnabled = record.IsPersisted && !record.HasAudio,
+        };
+        generate.Items.Add(new MenuItem { Header = "加载模型列表...", IsEnabled = false });
+        generate.SubmenuOpened += GenerateOcrWithVoiceSubmenuOpened;
+        var delete = new MenuItem { Header = "删除", Tag = record };
+        delete.Click += RemoveOcrRecordClick;
+        var menu = new ContextMenu
+        {
+            DataContext = record,
+            ItemsSource = new object[] { generate, new Separator(), delete },
+        };
+        menu.Open(OcrHistoryList);
+        e.Handled = true;
+    }
+
+    private static OcrRecord? FindOcrHistoryRecord(object? source)
+    {
+        var visual = source as Visual;
+        while (visual is not null)
+        {
+            if (visual is Control { DataContext: OcrRecord record })
+            {
+                return record;
+            }
+
+            visual = visual.GetVisualParent();
+        }
+
+        return null;
     }
 
     private void ViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
@@ -1277,6 +1332,8 @@ public partial class MainWindow : Window
                 ViewModel.DeleteOcrAudiosAsync,
                 ViewModel.GetConfiguredVoiceModels(),
                 ViewModel.GenerateSpeechForRecordAsync,
+                ViewModel.GetCurrentDocumentBookmarks(),
+                ViewModel.AttachOcrFromResourceAsync,
                 ViewModel.CanModifyDocument);
             await window.ShowDialog(this);
             ViewModel.RefreshResourceRelatedViews();
@@ -2095,19 +2152,55 @@ public partial class MainWindow : Window
 
     private async void ClearOcrRecordClick(object? sender, Avalonia.Interactivity.RoutedEventArgs e)
     {
-        var record = ViewModel.SelectedOcrRecord;
-        if (record is null)
+        var selectedRecord = ViewModel.SelectedOcrHistoryRecord;
+        if (selectedRecord is not null)
         {
-            return;
-        }
-
-        if (record.BookmarkId is not null)
-        {
+            await ClearPendingOcrRecordAsync(selectedRecord, confirmDeletion: true);
             e.Handled = true;
             return;
         }
 
-        if (record.BookmarkId is null)
+        var records = ViewModel.GetClearableOcrRecords();
+        if (records.Count == 0)
+        {
+            return;
+        }
+
+        var standaloneCount = records.Count(record => record.AllowStandalone);
+        var deletableCount = records.Count - standaloneCount;
+        if (deletableCount > 0)
+        {
+            var dialog = new OcrDeleteConfirmWindow(
+                "全部待处理 OCR",
+                $"中有 {standaloneCount} 条独立保留记录将仅从列表隐藏，另有 {deletableCount} 条记录会删除 OCR、音频和截图资源，是否继续？");
+            if (!await dialog.ShowDialog<bool>(this))
+            {
+                return;
+            }
+        }
+
+        foreach (var record in records)
+        {
+            await ClearPendingOcrRecordAsync(record, confirmDeletion: false);
+        }
+
+        e.Handled = true;
+    }
+
+    private async Task ClearPendingOcrRecordAsync(OcrRecord record, bool confirmDeletion)
+    {
+        if (record.BookmarkId is not null)
+        {
+            return;
+        }
+
+        if (record.AllowStandalone)
+        {
+            await ViewModel.HideStandaloneOcrFromProcessingQueueAsync(record);
+            return;
+        }
+
+        if (confirmDeletion)
         {
             var dialog = new OcrDeleteConfirmWindow(
                 record.Title,
@@ -2119,7 +2212,6 @@ public partial class MainWindow : Window
         }
 
         await ViewModel.DeleteOcrRecordAsync(record);
-        e.Handled = true;
     }
 
     protected override async void OnClosing(WindowClosingEventArgs e)

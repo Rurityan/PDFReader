@@ -16,10 +16,13 @@ public partial class ResourceManagerWindow : Window
     private readonly Func<OcrRecord, Task<bool>> _deleteAudios;
     private readonly IReadOnlyList<TtsVoiceModelOption> _voiceModels;
     private readonly Func<OcrRecord, string, Task> _generateAudio;
+    private readonly IReadOnlyList<Bookmark> _bookmarks;
+    private readonly Func<OcrRecord, Bookmark, Task<bool>> _attachToBookmark;
     private readonly ObservableCollection<OcrRecord> _filteredRecords = new();
     private bool _isInitialized;
 
     public bool CanModifyResources { get; }
+    public bool CanAttachToBookmark => CanModifyResources && _bookmarks.Count > 0;
 
     public ResourceManagerWindow()
         : this(
@@ -28,6 +31,8 @@ public partial class ResourceManagerWindow : Window
             _ => Task.FromResult(false),
             Array.Empty<TtsVoiceModelOption>(),
             (_, _) => Task.CompletedTask,
+            Array.Empty<Bookmark>(),
+            (_, _) => Task.FromResult(false),
             false)
     {
     }
@@ -38,6 +43,8 @@ public partial class ResourceManagerWindow : Window
         Func<OcrRecord, Task<bool>> deleteAudios,
         IReadOnlyList<TtsVoiceModelOption> voiceModels,
         Func<OcrRecord, string, Task> generateAudio,
+        IReadOnlyList<Bookmark> bookmarks,
+        Func<OcrRecord, Bookmark, Task<bool>> attachToBookmark,
         bool canModifyResources = true)
     {
         _records = records?.ToList() ?? new List<OcrRecord>();
@@ -45,6 +52,8 @@ public partial class ResourceManagerWindow : Window
         _deleteAudios = deleteAudios ?? (_ => Task.FromResult(false));
         _voiceModels = voiceModels ?? Array.Empty<TtsVoiceModelOption>();
         _generateAudio = generateAudio ?? ((_, _) => Task.CompletedTask);
+        _bookmarks = bookmarks ?? Array.Empty<Bookmark>();
+        _attachToBookmark = attachToBookmark ?? ((_, _) => Task.FromResult(false));
         CanModifyResources = canModifyResources;
         InitializeComponent();
         DataContext = this;
@@ -154,6 +163,32 @@ public partial class ResourceManagerWindow : Window
         {
             await _generateAudio(request.Item1, request.Item2);
             request.Item1.RefreshAudioStatus();
+            ApplyFilter();
+        }
+
+        e.Handled = true;
+    }
+
+    private async void AttachToBookmarkClick(object? sender, RoutedEventArgs e)
+    {
+        var record = GetRecord(sender);
+        if (record is null || record.BookmarkId is not null || !CanModifyResources)
+        {
+            return;
+        }
+
+        if (_bookmarks.Count == 0)
+        {
+            return;
+        }
+
+        var dialog = new BookmarkParentPickerWindow(
+            _bookmarks,
+            "挂载 OCR 到书签",
+            "搜索并选择目标书签");
+        var bookmark = await dialog.ShowDialog<Bookmark?>(this);
+        if (bookmark is not null && await _attachToBookmark(record, bookmark))
+        {
             ApplyFilter();
         }
 

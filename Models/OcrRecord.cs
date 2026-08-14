@@ -12,7 +12,26 @@ public sealed class OcrRecord : INotifyPropertyChanged
 {
     public Guid Id { get; set; } = Guid.NewGuid();
     public Guid PdfDocumentId { get; set; }
-    public Guid? BookmarkId { get; set; }
+    private Guid? _bookmarkId;
+
+    public Guid? BookmarkId
+    {
+        get => _bookmarkId;
+        set
+        {
+            if (_bookmarkId == value)
+            {
+                return;
+            }
+
+            _bookmarkId = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsUnattached));
+            OnPropertyChanged(nameof(ResourceMountStatusText));
+            OnPropertyChanged(nameof(QueueStatusText));
+            OnPropertyChanged(nameof(QueueStatusBrush));
+        }
+    }
     public int PageNumber { get; set; }
     public double X { get; set; }
     public double Y { get; set; }
@@ -54,7 +73,25 @@ public sealed class OcrRecord : INotifyPropertyChanged
     }
     public string? CapturePath { get; set; }
     public bool IsExternalImport { get; set; }
-    public bool AllowStandalone { get; set; }
+    public bool IsHiddenFromProcessingQueue { get; set; }
+    private bool _allowStandalone;
+
+    public bool AllowStandalone
+    {
+        get => _allowStandalone;
+        set
+        {
+            if (_allowStandalone == value)
+            {
+                return;
+            }
+
+            _allowStandalone = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(QueueStatusText));
+            OnPropertyChanged(nameof(QueueStatusBrush));
+        }
+    }
     public DateTime CreatedAtUtc { get; set; }
 
     public PdfDocument? PdfDocument { get; set; }
@@ -82,6 +119,7 @@ public sealed class OcrRecord : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsPendingSave));
             OnPropertyChanged(nameof(QueueStatusText));
+            OnPropertyChanged(nameof(QueueStatusBrush));
         }
     }
 
@@ -103,6 +141,7 @@ public sealed class OcrRecord : INotifyPropertyChanged
             OnPropertyChanged();
             OnPropertyChanged(nameof(IsPendingSave));
             OnPropertyChanged(nameof(QueueStatusText));
+            OnPropertyChanged(nameof(QueueStatusBrush));
         }
     }
 
@@ -122,6 +161,9 @@ public sealed class OcrRecord : INotifyPropertyChanged
     public string ResourceMountStatusText => BookmarkId is null ? "挂载：未挂载" : "挂载：已挂载";
 
     [NotMapped]
+    public bool IsUnattached => BookmarkId is null;
+
+    [NotMapped]
     public string ResourceAudioStatusText => TtsAudios.Count == 0
         ? "音频：无"
         : HasAudio ? $"音频：{TtsAudios.Count} 个可用" : "音频：文件缺失";
@@ -130,8 +172,13 @@ public sealed class OcrRecord : INotifyPropertyChanged
     public string QueueStatusText => IsProcessing
         ? "识别中..."
         : IsPersisted && BookmarkId is null
-            ? "待挂载"
+            ? AllowStandalone ? "待挂载（独立保留）" : "待挂载（启动时清理）"
             : "待确认";
+
+    [NotMapped]
+    public string QueueStatusBrush => IsPersisted && BookmarkId is null
+        ? AllowStandalone ? "#2E7D32" : "#C53030"
+        : "#89929C";
 
     [NotMapped]
     public double DisplayX { get; private set; }
