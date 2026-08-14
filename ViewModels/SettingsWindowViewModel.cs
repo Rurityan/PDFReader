@@ -22,6 +22,12 @@ public partial class SettingsWindowViewModel : ObservableObject
     private bool _autoGenerateOcrAudio;
 
     [ObservableProperty]
+    private bool _enableTtsAudioNormalization;
+
+    [ObservableProperty]
+    private string _ffmpegPath;
+
+    [ObservableProperty]
     private bool _enableLocalApi;
 
     [ObservableProperty]
@@ -53,6 +59,8 @@ public partial class SettingsWindowViewModel : ObservableObject
         _enablePagePreviews = settings.EnablePagePreviews;
         _enableOcrCaptureCache = settings.EnableOcrCaptureCache;
         _autoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        _enableTtsAudioNormalization = settings.EnableTtsAudioNormalization;
+        _ffmpegPath = settings.FfmpegPath;
         _enableLocalApi = settings.EnableLocalApi;
         _localApiPort = settings.LocalApiPort;
         _localApiToken = settings.LocalApiToken;
@@ -109,6 +117,8 @@ public partial class SettingsWindowViewModel : ObservableObject
             EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             AutoGenerateOcrAudio = AutoGenerateOcrAudio,
+            EnableTtsAudioNormalization = EnableTtsAudioNormalization,
+            FfmpegPath = FfmpegPath.Trim(),
             EnableLocalApi = EnableLocalApi,
             LocalApiPort = LocalApiPort,
             LocalApiToken = LocalApiToken.Trim(),

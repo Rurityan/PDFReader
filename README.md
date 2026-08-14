@@ -89,6 +89,7 @@ user_data/
 - TTS Base URL、API Key、Model Type
 - Voice Model 名称与 `voice_id` 键值对
 - OCR 喇叭按钮是否自动生成缺失音频（默认关闭）
+- HTTP TTS 音频响度归一化开关和 `ffmpeg.exe` 路径（默认关闭）
 - 本地自动化接口 Token
 
 ## 自动化导入接口

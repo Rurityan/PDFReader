@@ -151,6 +151,12 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
     private bool _autoGenerateOcrAudio;
 
     [ObservableProperty]
+    private bool _enableTtsAudioNormalization;
+
+    [ObservableProperty]
+    private string _ffmpegPath = string.Empty;
+
+    [ObservableProperty]
     private bool _enableLocalApi;
 
     [ObservableProperty]
@@ -230,6 +236,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
         EnablePagePreviews = settings.EnablePagePreviews;
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        EnableTtsAudioNormalization = settings.EnableTtsAudioNormalization;
+        FfmpegPath = settings.FfmpegPath;
         EnableLocalApi = settings.EnableLocalApi;
         LocalApiPort = settings.LocalApiPort;
         LocalApiToken = settings.LocalApiToken;
@@ -3304,6 +3312,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
 
         EnableOcrCaptureCache = settings.EnableOcrCaptureCache;
         AutoGenerateOcrAudio = settings.AutoGenerateOcrAudio;
+        EnableTtsAudioNormalization = settings.EnableTtsAudioNormalization;
+        FfmpegPath = settings.FfmpegPath;
         EnableLocalApi = settings.EnableLocalApi;
         LocalApiPort = settings.LocalApiPort;
         LocalApiToken = settings.LocalApiToken;
@@ -3607,6 +3617,8 @@ public partial class MainWindowViewModel : ObservableObject, IDisposable
             EnablePagePreviews = EnablePagePreviews,
             EnableOcrCaptureCache = EnableOcrCaptureCache,
             AutoGenerateOcrAudio = AutoGenerateOcrAudio,
+            EnableTtsAudioNormalization = EnableTtsAudioNormalization,
+            FfmpegPath = FfmpegPath,
             EnableLocalApi = EnableLocalApi,
             LocalApiPort = LocalApiPort,
             LocalApiToken = LocalApiToken,

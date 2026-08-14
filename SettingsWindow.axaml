@@ -49,6 +49,13 @@
                 </ComboBox>
                 <CheckBox Content="OCR 喇叭按钮自动生成缺失音频"
                           IsChecked="{Binding AutoGenerateOcrAudio}" />
+                <CheckBox Content="对 HTTP TTS 生成的音频进行响度归一化"
+                          IsChecked="{Binding EnableTtsAudioNormalization}" />
+                <TextBlock Text="ffmpeg.exe 路径" FontSize="12" Foreground="#737E88" />
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                    <TextBox Text="{Binding FfmpegPath}" PlaceholderText="默认关闭；启用归一化后请选择 ffmpeg.exe" />
+                    <Button Grid.Column="1" Content="选择" Click="SelectFfmpegClick" Padding="12,5" />
+                </Grid>
                 <Border Background="#EEF3F8" Padding="10" CornerRadius="4">
                     <StackPanel Spacing="8">
                         <CheckBox Content="开启本地自动化接口"

@@ -2,6 +2,7 @@ using System;
 using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
+using Avalonia.Platform.Storage;
 using PDFReader.Models;
 using PDFReader.ViewModels;
 
@@ -46,5 +47,22 @@ public partial class SettingsWindow : Window
     {
         _localApiTokenVisible = !_localApiTokenVisible;
         LocalApiTokenTextBox.PasswordChar = _localApiTokenVisible ? '\0' : '*';
+    }
+
+    private async void SelectFfmpegClick(object? sender, RoutedEventArgs e)
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择 ffmpeg.exe",
+            AllowMultiple = false,
+            FileTypeFilter = new[]
+            {
+                new FilePickerFileType("ffmpeg 可执行文件") { Patterns = new[] { "ffmpeg.exe", "*.exe" } },
+            },
+        });
+        if (files.Count > 0)
+        {
+            ((SettingsWindowViewModel)DataContext!).FfmpegPath = files[0].Path.LocalPath;
+        }
     }
 }

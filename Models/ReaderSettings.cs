@@ -9,11 +9,13 @@ public sealed class ReaderSettings
     public bool EnablePagePreviews { get; set; } = true;
     public bool EnableOcrCaptureCache { get; set; }
     public bool AutoGenerateOcrAudio { get; set; }
+    public bool EnableTtsAudioNormalization { get; set; }
     public bool EnableLocalApi { get; set; }
     public int LocalApiPort { get; set; } = 38421;
     public string LocalApiToken { get; set; } = Guid.NewGuid().ToString("N");
     public string OcrCaptureDirectory { get; set; } = GetDefaultCaptureDirectory();
     public string AudioDirectory { get; set; } = GetDefaultAudioDirectory();
+    public string FfmpegPath { get; set; } = string.Empty;
     public string TtsBaseUrl { get; set; } = string.Empty;
     public string TtsApiKey { get; set; } = string.Empty;
     public string TtsModelType { get; set; } = string.Empty;
