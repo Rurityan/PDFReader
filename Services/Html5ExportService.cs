@@ -74,13 +74,16 @@ public sealed class Html5ExportService
                 }),
         };
 
-        var manifestJson = JsonSerializer.Serialize(manifest, JsonOptions);
+        var manifestJson = JsonSerializer.Serialize(
+            manifest,
+            new JsonSerializerOptions(JsonOptions) { WriteIndented = false });
+        var manifestScriptJson = JsonSerializer.Serialize(manifest, JsonOptions);
         await File.WriteAllTextAsync(Path.Combine(outputDirectory, "manifest.json"), manifestJson);
         // A script copy allows the package to work when index.html is opened
         // directly via file://, where browsers commonly block fetch().
         await File.WriteAllTextAsync(
             Path.Combine(outputDirectory, "manifest.js"),
-            $"window.PDFREADER_MANIFEST={manifestJson};");
+            $"window.PDFREADER_MANIFEST={manifestScriptJson};");
         await File.WriteAllTextAsync(Path.Combine(outputDirectory, "index.html"), HtmlTemplate);
         await File.WriteAllTextAsync(Path.Combine(outputDirectory, "app.css"), CssTemplate);
         await File.WriteAllTextAsync(Path.Combine(outputDirectory, "app.js"), JavaScriptTemplate + AudioControlsScript);
