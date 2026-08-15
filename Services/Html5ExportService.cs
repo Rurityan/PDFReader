@@ -205,6 +205,9 @@ function updateContinuousReadButton(){$('read-all').disabled=state.continuous}
 play=function(items,continuous=false){originalPlay(items,continuous);updateContinuousReadButton();if(continuous)prefetchNextPage()};
 stop=function(){originalStop();updateContinuousReadButton();clearPrefetch()};
 audio.onended=nextAudio;
+$('read-page').onclick=()=>play(state.manifest.ocrRecords.filter(x=>x.pageNumber===state.page),false);
+$('read-all').onclick=()=>play(state.manifest.ocrRecords.filter(x=>x.pageNumber>=state.page),true);
+$('stop').onclick=()=>stop();
 function formatAudioTime(value){if(!Number.isFinite(value)||value<0)return '00:00';const seconds=Math.floor(value),minutes=Math.floor(seconds/60),remainder=seconds%60;return String(minutes).padStart(2,'0')+':'+String(remainder).padStart(2,'0')}
 function updateAudioTime(){const duration=audio.duration;audioTime.textContent=formatAudioTime(audio.currentTime)+' / '+formatAudioTime(duration);audioProgress.value=Number.isFinite(duration)&&duration>0?String(audio.currentTime/duration*100):'0'}
 function setAudioStatus(value){audioStatus.textContent=value}
