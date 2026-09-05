@@ -290,7 +290,7 @@ dotnet restore
 dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o .\publish\win-x64
 ```
 
-发布目录已经包含 `PDFReader.exe`、`Scripts/ocr_worker.py`、OCR 依赖清单和 `ocr_model` 模型。`.NET` 使用 self-contained 发布，但 Python 仍需单独准备。可在发布目录创建虚拟环境：
+发布目录已经包含 `PDFReader.exe`、`Scripts/ocr_worker.py`、OCR 依赖清单和 `ocr_model` 模型。`.NET` 和 Python 都按 self-contained 方式发布；开发机上的 Python 只用于构建时收集依赖。打包后的应用使用 `.venv/python.exe`，开发目录则回退使用 `.venv/Scripts/python.exe`。
 
 ```powershell
 Set-Location .\publish\win-x64
@@ -301,7 +301,7 @@ py -m venv .venv
 
 也可以不在发布目录创建 `.venv`，通过 `PDFREADER_PYTHON` 环境变量指向已有 Python 解释器。应用应从发布目录启动，以便数据库、配置和资源都位于 exe 旁边的 `user_data` 中。
 
-推荐使用 `Scripts/build-release.ps1` 构建完整运行时。脚本不会把开发环境的整个 `.venv` 原样带入发布目录，而是按白名单复制 OCR、PyMuPDF、标注和 Acrobat 富媒体导出所需的 Python 运行库；这样可以避免旧 Paddle/ModelScope 工具、测试文件和其他开发依赖进入安装包。安装 Inno Setup 后，加上 `-BuildInstaller` 参数即可生成安装包：
+推荐使用 `Scripts/build-release.ps1` 构建完整运行时。脚本会从源虚拟环境的 `pyvenv.cfg` 解析基础 Python 安装，复制真正的 `python.exe`、Python DLL、`DLLs` 和标准库，再按白名单复制 OCR、PyMuPDF、标注和 Acrobat 富媒体导出所需的 `site-packages`；发布目录不保留指向开发机的 `pyvenv.cfg`，也不会带入旧 Paddle/ModelScope 工具、测试文件和其他开发依赖。安装 Inno Setup 后，加上 `-BuildInstaller` 参数即可生成安装包：
 
 ```powershell
 .\Scripts\build-release.ps1 -BuildInstaller
@@ -329,8 +329,16 @@ ARM64 打包会从 `py-libs/win-arm64` 安装原生 wheel。`miniaudio`、`cffi`
 
 OCR 服务默认使用项目根目录下的：
 
+开发目录默认使用：
+
 ```text
 .venv\Scripts\python.exe
+```
+
+完整发布目录使用：
+
+```text
+.venv\python.exe
 ```
 
 如需指定其他 Python 解释器，可设置 `PDFREADER_PYTHON` 环境变量。OCR worker 只需要以下 Python 依赖：

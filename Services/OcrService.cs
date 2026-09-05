@@ -108,11 +108,16 @@ public sealed class OcrService
 
         for (var directory = new DirectoryInfo(AppContext.BaseDirectory); directory is not null; directory = directory.Parent)
         {
+            var packagedCandidate = Path.Combine(directory.FullName, ".venv", "python.exe");
+            if (File.Exists(packagedCandidate)) return packagedCandidate;
             var candidate = Path.Combine(directory.FullName, ".venv", "Scripts", "python.exe");
             if (File.Exists(candidate)) return candidate;
         }
 
-        return Path.Combine(AppContext.BaseDirectory, ".venv", "Scripts", "python.exe");
+        var packagedPath = Path.Combine(AppContext.BaseDirectory, ".venv", "python.exe");
+        return File.Exists(packagedPath)
+            ? packagedPath
+            : Path.Combine(AppContext.BaseDirectory, ".venv", "Scripts", "python.exe");
     }
 }
 

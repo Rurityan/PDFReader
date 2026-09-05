@@ -137,11 +137,16 @@ public sealed class Html5ExportService
         if (!string.IsNullOrWhiteSpace(configured)) return configured;
         for (var directory = new DirectoryInfo(baseDirectory); directory is not null; directory = directory.Parent)
         {
+            var packagedCandidate = Path.Combine(directory.FullName, ".venv", "python.exe");
+            if (File.Exists(packagedCandidate)) return packagedCandidate;
             var candidate = Path.Combine(directory.FullName, ".venv", "Scripts", "python.exe");
             if (File.Exists(candidate)) return candidate;
         }
 
-        return Path.Combine(baseDirectory, ".venv", "Scripts", "python.exe");
+        var packagedPath = Path.Combine(baseDirectory, ".venv", "python.exe");
+        return File.Exists(packagedPath)
+            ? packagedPath
+            : Path.Combine(baseDirectory, ".venv", "Scripts", "python.exe");
     }
 
     private static IEnumerable<Bookmark> EnumerateBookmarkTree(Bookmark bookmark)

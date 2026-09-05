@@ -123,7 +123,7 @@ user_data/
 dotnet publish .\PDFReader.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -p:DebugSymbols=false -o .\publish\win-x64
 ```
 
-使用当前 `.venv` 打包 x64 版本，并可生成 Inno Setup 安装包：
+使用当前 `.venv` 收集依赖并打包 x64 版本；脚本会把基础 Python 解释器、DLL、标准库和白名单依赖一起放入安装包，可生成 Inno Setup 安装包：
 
 ```powershell
 .\Scripts\build-release.ps1 -BuildInstaller

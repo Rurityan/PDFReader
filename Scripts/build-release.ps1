@@ -30,10 +30,22 @@ function Publish-Runtime {
         }
     }
     $pythonEnvironment = (Resolve-Path $environmentPath).Path
-    if (-not (Test-Path (Join-Path $pythonEnvironment "Scripts\python.exe"))) {
-        throw "Python environment is missing Scripts\python.exe: $pythonEnvironment"
+    $venvConfigPath = Join-Path $pythonEnvironment "pyvenv.cfg"
+    if (-not (Test-Path $venvConfigPath)) {
+        throw "Python environment is missing pyvenv.cfg: $pythonEnvironment"
     }
     $pythonExecutable = Join-Path $pythonEnvironment "Scripts\python.exe"
+    if (-not (Test-Path $pythonExecutable)) {
+        throw "Python environment is missing Scripts\python.exe: $pythonEnvironment"
+    }
+    $pythonHomeLine = Get-Content $venvConfigPath | Where-Object { $_ -match '^\s*home\s*=' } | Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace($pythonHomeLine)) {
+        throw "Python virtual environment does not declare a base interpreter in pyvenv.cfg: $venvConfigPath"
+    }
+    $pythonHome = (($pythonHomeLine -split '=', 2)[1]).Trim()
+    if (-not (Test-Path (Join-Path $pythonHome "python.exe"))) {
+        throw "Python base interpreter is missing or unavailable: $pythonHome"
+    }
     if ($TargetRuntime -eq "win-x64") {
         & $pythonExecutable -c "import pikepdf, miniaudio"
         if ($LASTEXITCODE -ne 0) {
@@ -73,12 +85,13 @@ function Publish-Runtime {
         Remove-Item -Force
 
     $packagedPython = Join-Path $publishDirectory ".venv"
-    # Copy the interpreter and standard library, but never the complete
-    # development site-packages tree. It may contain old Paddle/model tooling.
-    & robocopy $pythonEnvironment $packagedPython /E /XD site-packages /NFL /NDL /NJH /NJS /NP
+    # A Windows venv's python.exe is only a launcher and pyvenv.cfg points to
+    # the developer's base installation. Copy the real base runtime instead.
+    & robocopy $pythonHome $packagedPython /E /XD site-packages /NFL /NDL /NJH /NJS /NP
     if ($LASTEXITCODE -gt 7) {
-        throw "Failed to copy the Python runtime with robocopy (exit code $LASTEXITCODE)."
+        throw "Failed to copy the self-contained Python runtime with robocopy (exit code $LASTEXITCODE)."
     }
+    Remove-Item -LiteralPath (Join-Path $packagedPython "pyvenv.cfg") -Force -ErrorAction SilentlyContinue
 
     # Current workers use this fixed dependency set. Keep transitive runtime
     # packages explicit so a developer's unrelated tools cannot enter a setup.
