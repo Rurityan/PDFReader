@@ -114,6 +114,28 @@ function Publish-Runtime {
         }
     }
 
+    # Windows resolves native extension dependencies from the extension's
+    # directory. pikepdf bundles the ARM64 MSVC runtime; share it with the
+    # ONNX Runtime and PyMuPDF extensions in the packaged environment.
+    $pikepdfPackage = Join-Path $packagedSitePackages "pikepdf"
+    $nativeRuntimeTargets = @(
+        (Join-Path $packagedSitePackages "onnxruntime\capi"),
+        (Join-Path $packagedSitePackages "pymupdf")
+    )
+    $nativeRuntimeFiles = @(
+        "msvcp140.dll", "msvcp140_1.dll", "msvcp140_2.dll",
+        "msvcp140_atomic_wait.dll", "msvcp140_codecvt_ids.dll",
+        "vcruntime140.dll", "vcruntime140_1.dll", "concrt140.dll"
+    )
+    foreach ($target in $nativeRuntimeTargets) {
+        foreach ($runtimeFile in $nativeRuntimeFiles) {
+            $sourceRuntimeFile = Join-Path $pikepdfPackage $runtimeFile
+            if (Test-Path $sourceRuntimeFile) {
+                Copy-Item -LiteralPath $sourceRuntimeFile -Destination $target -Force
+            }
+        }
+    }
+
     Get-ChildItem $sourceSitePackages -File | Where-Object {
         $_.Name -match '^(_miniaudio|_cffi_backend).*\.(pyd|py)$' -or $_.Name -eq 'miniaudio.py'
     } | Copy-Item -Destination $packagedSitePackages -Force
